@@ -1,3 +1,7 @@
+'use client';
+
+import { FormEvent, useState } from 'react';
+
 const student = {
   name: 'أحمد محمد علي',
   id: '202420011',
@@ -7,6 +11,7 @@ const student = {
   status: 'نشط',
   email: 'student@udti.edu',
   password: '********',
+  defaultPassword: '123456',
 };
 
 const grades = [
@@ -36,19 +41,148 @@ const attendanceSummary = [
   { label: 'منتظر', value: '7', tone: 'waiting' },
 ];
 
+type TabKey = 'grades' | 'record' | 'status' | 'schedule';
+
 export default function Home() {
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [activeTab, setActiveTab] = useState<TabKey>('grades');
+  const [notice, setNotice] = useState('يرجى تسجيل الدخول لعرض نتائجك');
+  const [loginData, setLoginData] = useState({ email: student.email, password: '' });
+  const [studentEmail, setStudentEmail] = useState(student.email);
+  const [studentPass, setStudentPass] = useState(student.password);
+  const [studentClass, setStudentClass] = useState('A-201');
+
+  const handleLogin = (event: FormEvent) => {
+    event.preventDefault();
+
+    if (
+      loginData.email.trim().toLowerCase() === student.email.toLowerCase() &&
+      loginData.password === student.defaultPassword
+    ) {
+      setIsLoggedIn(true);
+      setNotice('تم تسجيل الدخول بنجاح');
+      return;
+    }
+
+    setNotice('بيانات الدخول غير صحيحة. استخدم البريد: student@udti.edu وكلمة المرور: 123456');
+  };
+
+  const updateEmail = () => {
+    const nextEmail = window.prompt('أدخل البريد الإلكتروني الجديد', studentEmail);
+    if (!nextEmail || !nextEmail.includes('@')) {
+      setNotice('البريد الإلكتروني غير صحيح');
+      return;
+    }
+
+    setStudentEmail(nextEmail.trim());
+    setNotice('تم تحديث البريد الإلكتروني بنجاح');
+  };
+
+  const updatePassword = () => {
+    const nextPassword = window.prompt('أدخل كلمة المرور الجديدة', '');
+    if (!nextPassword || nextPassword.trim().length < 6) {
+      setNotice('كلمة المرور يجب أن تكون 6 أحرف أو أكثر');
+      return;
+    }
+
+    setStudentPass('********');
+    setNotice('تم تحديث كلمة المرور بنجاح');
+  };
+
+  const updateClass = () => {
+    const nextClass = window.prompt('أدخل الفئة الجديدة', studentClass);
+    if (!nextClass || !nextClass.trim()) {
+      setNotice('يجب إدخال قيمة للفئة');
+      return;
+    }
+
+    setStudentClass(nextClass.trim());
+    setNotice('تم تحديث الفئة بنجاح');
+  };
+
+  const printResults = () => {
+    setNotice('تم تجهيز الطباعة');
+    window.print();
+  };
+
+  const logout = () => {
+    setIsLoggedIn(false);
+    setLoginData({ email: student.email, password: '' });
+    setNotice('تم تسجيل الخروج بنجاح');
+  };
+
+  const tabs = [
+    { key: 'grades', label: 'العلامات' },
+    { key: 'record', label: 'السجل' },
+    { key: 'status', label: 'الحالة' },
+    { key: 'schedule', label: 'الدوام' },
+  ] as const;
+
+  if (!isLoggedIn) {
+    return (
+      <main className="login-shell" dir="rtl">
+        <div className="login-card">
+          <div className="login-header">
+            <img
+              className="login-logo"
+              src="https://drive.google.com/thumbnail?id=1WBYFxtmLUfuREUY1H5Uso5ltomjshWlq&sz=w1000"
+              alt="شعار المعهد"
+            />
+            <h1>بوابة الطالب</h1>
+            <p>جامعة اللاذقية - المعهد التقاني لطب الأسنان</p>
+          </div>
+
+          <form onSubmit={handleLogin} className="login-form">
+            <label>
+              البريد الإلكتروني
+              <input
+                type="email"
+                value={loginData.email}
+                onChange={(event) => setLoginData({ ...loginData, email: event.target.value })}
+                placeholder="student@udti.edu"
+              />
+            </label>
+
+            <label>
+              كلمة المرور
+              <input
+                type="password"
+                value={loginData.password}
+                onChange={(event) => setLoginData({ ...loginData, password: event.target.value })}
+                placeholder="••••••"
+              />
+            </label>
+
+            <button type="submit" className="login-button">تسجيل الدخول</button>
+          </form>
+
+          <div className="login-help">
+            <strong>بيانات الدخول التجريبية:</strong>
+            <span>student@udti.edu</span>
+            <span>123456</span>
+          </div>
+
+          <div className="system-notice">{notice}</div>
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main className="student-shell" dir="rtl">
       <div className="student-page">
         <div className="container" id="mainContainer">
-          <div className="institute-header">
-            <img
-              className="institute-logo"
-              src="https://drive.google.com/thumbnail?id=1WBYFxtmLUfuREUY1H5Uso5ltomjshWlq&sz=w1000"
-              alt="شعار المعهد"
-            />
-            <h2>المعهد التقاني لطب الأسنان</h2>
-            <h3>جامعة اللاذقية</h3>
+          <div className="topbar">
+            <div className="institute-header">
+              <img
+                className="institute-logo"
+                src="https://drive.google.com/thumbnail?id=1WBYFxtmLUfuREUY1H5Uso5ltomjshWlq&sz=w1000"
+                alt="شعار المعهد"
+              />
+              <h2>المعهد التقاني لطب الأسنان</h2>
+              <h3>جامعة اللاذقية</h3>
+            </div>
+            <button className="logout-button" type="button" onClick={logout}>تسجيل الخروج</button>
           </div>
 
           <div className="barcode-section">
@@ -90,6 +224,8 @@ export default function Home() {
             </div>
           </div>
 
+          <div className="system-notice">{notice}</div>
+
           <div className="header">
             <h1>الحساب الجامعي</h1>
           </div>
@@ -114,114 +250,128 @@ export default function Home() {
             </div>
             <div className="detail-item">
               <div className="detail-label">البريد الإلكتروني</div>
-              <div className="detail-value">{student.email}</div>
+              <div className="detail-value">{studentEmail}</div>
             </div>
             <div className="detail-item">
               <div className="detail-label">كلمة المرور</div>
-              <div className="detail-value">{student.password}</div>
+              <div className="detail-value">{studentPass}</div>
             </div>
           </div>
 
           <div className="tabs-container">
             <div className="tabs">
-              <button className="tab active" type="button">العلامات</button>
-              <button className="tab" type="button">السجل</button>
-              <button className="tab" type="button">الحالة</button>
-              <button className="tab" type="button">الدوام</button>
+              {tabs.map((tab) => (
+                <button
+                  key={tab.key}
+                  className={`tab ${activeTab === tab.key ? 'active' : ''}`}
+                  type="button"
+                  onClick={() => setActiveTab(tab.key)}
+                >
+                  {tab.label}
+                </button>
+              ))}
             </div>
 
-            <div className="tab-content active">
-              <table>
-                <thead>
-                  <tr>
-                    <th>المادة</th>
-                    <th>أعمال السنة</th>
-                    <th>نظري</th>
-                    <th>عملي</th>
-                    <th>المجموع</th>
-                    <th>مساعدة امتحانية</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {grades.map((item) => (
-                    <tr key={item.subject}>
-                      <td>{item.subject}</td>
-                      <td>{item.annual}</td>
-                      <td>{item.theory}</td>
-                      <td>{item.practical}</td>
-                      <td>{item.total}</td>
-                      <td>{item.assistance}</td>
+            {activeTab === 'grades' && (
+              <div className="tab-content active">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>المادة</th>
+                      <th>أعمال السنة</th>
+                      <th>نظري</th>
+                      <th>عملي</th>
+                      <th>المجموع</th>
+                      <th>مساعدة امتحانية</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {grades.map((item) => (
+                      <tr key={item.subject}>
+                        <td>{item.subject}</td>
+                        <td>{item.annual}</td>
+                        <td>{item.theory}</td>
+                        <td>{item.practical}</td>
+                        <td>{item.total}</td>
+                        <td>{item.assistance}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
 
-              <div className="final-average">
-                <div className="average-title">المعدل التراكمي</div>
-                <div className="average-value">90.8</div>
-                <div className="percentage-container">
-                  <div className="percentage-value">90.8%</div>
-                  <div className="progress-container">
-                    <div className="progress-bar">
-                      <div className="progress-fill" style={{ width: '90.8%' }}>
-                        <span className="progress-text">90.8%</span>
+                <div className="final-average">
+                  <div className="average-title">المعدل التراكمي</div>
+                  <div className="average-value">90.8</div>
+                  <div className="percentage-container">
+                    <div className="percentage-value">90.8%</div>
+                    <div className="progress-container">
+                      <div className="progress-bar">
+                        <div className="progress-fill" style={{ width: '90.8%' }}>
+                          <span className="progress-text">90.8%</span>
+                        </div>
                       </div>
                     </div>
                   </div>
                 </div>
               </div>
-            </div>
+            )}
 
-            <div className="tab-content">
-              <div className="warning-icon"><i className="fa-solid fa-triangle-exclamation" /></div>
-              <div className="warning-list">
-                {warnings.map((warning) => (
-                  <div key={warning.title} className="warning-item">
-                    <div className="warning-header">
-                      <strong>{warning.title}</strong>
-                      <span className="warning-type">{warning.severity}</span>
+            {activeTab === 'record' && (
+              <div className="tab-content active">
+                <div className="warning-icon"><i className="fa-solid fa-triangle-exclamation" /></div>
+                <div className="warning-list">
+                  {warnings.map((warning) => (
+                    <div key={warning.title} className="warning-item">
+                      <div className="warning-header">
+                        <strong>{warning.title}</strong>
+                        <span className="warning-type">{warning.severity}</span>
+                      </div>
+                      <div className="warning-date">{warning.date}</div>
+                      <div className="warning-reason">تم تسجيل هذا الإنذار وفقاً للسياسات الأكاديمية المعتمدة.</div>
                     </div>
-                    <div className="warning-date">{warning.date}</div>
-                    <div className="warning-reason">تم تسجيل هذا الإنذار وفقاً للسياسات الأكاديمية المعتمدة.</div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'status' && (
+              <div className="tab-content active">
+                <div className="status-grid">
+                  <div className="status-card">
+                    <div className="status-icon"><i className="fa-solid fa-check-circle" /></div>
+                    <div className="status-title">الحالة الدراسية</div>
+                    <div className="status-data">نشط</div>
                   </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="tab-content">
-              <div className="status-grid">
-                <div className="status-card">
-                  <div className="status-icon"><i className="fa-solid fa-check-circle" /></div>
-                  <div className="status-title">الحالة الدراسية</div>
-                  <div className="status-data">نشط</div>
-                </div>
-                <div className="status-card">
-                  <div className="status-icon"><i className="fa-solid fa-calendar-check" /></div>
-                  <div className="status-title">معدل الحضور</div>
-                  <div className="status-data">96%</div>
-                </div>
-                <div className="status-card">
-                  <div className="status-icon"><i className="fa-solid fa-bell" /></div>
-                  <div className="status-title">عدد الإنذارات</div>
-                  <div className="status-data">3</div>
+                  <div className="status-card">
+                    <div className="status-icon"><i className="fa-solid fa-calendar-check" /></div>
+                    <div className="status-title">معدل الحضور</div>
+                    <div className="status-data">96%</div>
+                  </div>
+                  <div className="status-card">
+                    <div className="status-icon"><i className="fa-solid fa-bell" /></div>
+                    <div className="status-title">عدد الإنذارات</div>
+                    <div className="status-data">3</div>
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
 
-            <div className="tab-content">
-              <div className="schedule-cards">
-                {schedule.map((day) => (
-                  <div key={day.day} className="schedule-card">
-                    <div className="day-header"><i className="fa-regular fa-calendar" /> {day.day}</div>
-                    <div className="schedule-content">
-                      {day.items.map((item) => (
-                        <div key={item} className="schedule-text">{item}</div>
-                      ))}
+            {activeTab === 'schedule' && (
+              <div className="tab-content active">
+                <div className="schedule-cards">
+                  {schedule.map((day) => (
+                    <div key={day.day} className="schedule-card">
+                      <div className="day-header"><i className="fa-regular fa-calendar" /> {day.day}</div>
+                      <div className="schedule-content">
+                        {day.items.map((item) => (
+                          <div key={item} className="schedule-text">{item}</div>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
           </div>
 
           <div className="attendance-box">
@@ -238,10 +388,10 @@ export default function Home() {
           </div>
 
           <div className="action-buttons">
-            <button className="btn btn-primary" type="button">تحديث البريد الإلكتروني</button>
-            <button className="btn btn-primary" type="button">تغيير كلمة المرور</button>
-            <button className="btn btn-primary" type="button">تغيير الفئة</button>
-            <button className="btn btn-danger" type="button">طباعة النتيجة</button>
+            <button className="btn btn-primary" type="button" onClick={updateEmail}>تحديث البريد الإلكتروني</button>
+            <button className="btn btn-primary" type="button" onClick={updatePassword}>تغيير كلمة المرور</button>
+            <button className="btn btn-primary" type="button" onClick={updateClass}>تغيير الفئة</button>
+            <button className="btn btn-danger" type="button" onClick={printResults}>طباعة النتيجة</button>
           </div>
 
           <div className="last-updated">آخر تحديث للنظام: 2026/09/16</div>

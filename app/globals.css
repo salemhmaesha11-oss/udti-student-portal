@@ -34,6 +34,119 @@ body {
   direction: rtl;
 }
 
+button,
+input {
+  font-family: inherit;
+}
+
+.login-shell {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: linear-gradient(135deg, #f2efe7 0%, #e8e2d4 100%);
+}
+
+.login-card {
+  width: min(100%, 460px);
+  background: rgba(255, 255, 255, 0.96);
+  border-radius: 18px;
+  box-shadow: var(--shadow-soft);
+  padding: 30px 26px 24px;
+  border: 1px solid rgba(130, 107, 74, 0.16);
+}
+
+.login-header {
+  text-align: center;
+  margin-bottom: 18px;
+}
+
+.login-logo {
+  width: 120px;
+  height: auto;
+  border-radius: 14px;
+  margin-bottom: 10px;
+}
+
+.login-header h1 {
+  font-size: 30px;
+  color: var(--secondary-color);
+  margin-bottom: 8px;
+}
+
+.login-header p {
+  color: #666;
+  font-size: 14px;
+}
+
+.login-form {
+  display: grid;
+  gap: 16px;
+}
+
+.login-form label {
+  display: grid;
+  gap: 8px;
+  font-weight: 700;
+  color: #444;
+}
+
+.login-form input {
+  width: 100%;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 12px 14px;
+  font-size: 15px;
+  outline: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.login-form input:focus {
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 4px rgba(172, 160, 117, 0.12);
+}
+
+.login-button {
+  border: none;
+  border-radius: 10px;
+  background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+  color: #fff;
+  height: 48px;
+  font-size: 17px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.login-button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 18px rgba(138, 125, 90, 0.25);
+}
+
+.login-help {
+  display: grid;
+  gap: 4px;
+  margin-top: 16px;
+  padding: 12px 14px;
+  background: #f8f6f1;
+  border: 1px solid rgba(172, 160, 117, 0.3);
+  border-radius: 10px;
+  color: #555;
+  font-size: 14px;
+}
+
+.system-notice {
+  margin-top: 18px;
+  background: rgba(67, 160, 71, 0.09);
+  border: 1px solid rgba(67, 160, 71, 0.18);
+  color: #2f5a33;
+  border-radius: 10px;
+  padding: 12px 14px;
+  text-align: center;
+  font-size: 14px;
+}
+
 .student-shell {
   min-height: 100vh;
   display: flex;
@@ -66,11 +179,29 @@ body {
   background: linear-gradient(90deg, var(--secondary-color), var(--primary-color));
 }
 
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+}
+
+.logout-button {
+  border: none;
+  background: #f1efe8;
+  color: var(--secondary-color);
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
 .institute-header {
   text-align: center;
   margin-bottom: 22px;
   padding-bottom: 16px;
   border-bottom: 2px solid var(--primary-color);
+  flex: 1;
 }
 
 .institute-logo {
@@ -559,6 +690,11 @@ tr:nth-child(even) td {
 @media (max-width: 768px) {
   .container {
     padding: 22px 14px 18px;
+  }
+
+  .topbar {
+    flex-direction: column;
+    align-items: stretch;
   }
 
   .institute-header h2 {
