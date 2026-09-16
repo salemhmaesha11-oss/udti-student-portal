@@ -1,6 +1,7 @@
 'use client';
 
-import { FormEvent, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
+import { supabase } from '../lib/supabase';
 
 const student = {
   name: 'أحمد محمد علي',
@@ -43,6 +44,13 @@ const attendanceSummary = [
 
 type TabKey = 'grades' | 'record' | 'status' | 'schedule';
 
+type StudentRow = {
+  id?: number;
+  name: string;
+  email: string;
+  phone: string;
+};
+
 export default function Home() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [activeTab, setActiveTab] = useState<TabKey>('grades');
@@ -51,6 +59,25 @@ export default function Home() {
   const [studentEmail, setStudentEmail] = useState(student.email);
   const [studentPass, setStudentPass] = useState(student.password);
   const [studentClass, setStudentClass] = useState('A-201');
+  const [registerName, setRegisterName] = useState('');
+  const [registerEmail, setRegisterEmail] = useState('');
+  const [registerPhone, setRegisterPhone] = useState('');
+  const [students, setStudents] = useState<StudentRow[]>([]);
+
+  const fetchStudents = async () => {
+    const { data, error } = await supabase.from('students').select('*').order('id', { ascending: false });
+
+    if (error) {
+      setNotice('تعذر جلب بيانات الطلاب من Supabase');
+      return;
+    }
+
+    setStudents(data ?? []);
+  };
+
+  useEffect(() => {
+    fetchStudents();
+  }, []);
 
   const handleLogin = (event: FormEvent) => {
     event.preventDefault();
@@ -98,6 +125,34 @@ export default function Home() {
 
     setStudentClass(nextClass.trim());
     setNotice('تم تحديث الفئة بنجاح');
+  };
+
+  const handleRegister = async (event: FormEvent) => {
+    event.preventDefault();
+
+    if (!registerName.trim() || !registerEmail.trim() || !registerPhone.trim()) {
+      setNotice('يرجى تعبئة الاسم والبريد الإلكتروني ورقم الهاتف');
+      return;
+    }
+
+    const payload = {
+      name: registerName.trim(),
+      email: registerEmail.trim(),
+      phone: registerPhone.trim(),
+    };
+
+    const { error } = await supabase.from('students').insert([payload]);
+
+    if (error) {
+      setNotice(`فشل حفظ الطالب في Supabase: ${error.message}`);
+      return;
+    }
+
+    setNotice('تم حفظ الطالب بنجاح في قاعدة البيانات');
+    setRegisterName('');
+    setRegisterEmail('');
+    setRegisterPhone('');
+    await fetchStudents();
   };
 
   const printResults = () => {
@@ -384,6 +439,63 @@ export default function Home() {
                   <strong>{item.value}</strong>
                 </div>
               ))}
+            </div>
+          </div>
+
+          <div className="register-panel">
+            <h3>تسجيل طالب جديد</h3>
+            <form onSubmit={handleRegister} className="register-form">
+              <input
+                type="text"
+                placeholder="اسم الطالب"
+                value={registerName}
+                onChange={(event) => setRegisterName(event.target.value)}
+              />
+              <input
+                type="email"
+                placeholder="البريد الإلكتروني"
+                value={registerEmail}
+                onChange={(event) => setRegisterEmail(event.target.value)}
+              />
+              <input
+                type="tel"
+                placeholder="رقم الهاتف"
+                value={registerPhone}
+                onChange={(event) => setRegisterPhone(event.target.value)}
+              />
+              <button type="submit" className="btn btn-primary">حفظ في Supabase</button>
+            </form>
+          </div>
+
+          <div className="students-table-panel">
+            <h3>قائمة الطلاب من Supabase</h3>
+            <div className="students-table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>الاسم</th>
+                    <th>البريد الإلكتروني</th>
+                    <th>رقم الهاتف</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {students.length === 0 ? (
+                    <tr>
+                      <td colSpan={4}>لا توجد بيانات حتى الآن</td>
+                    </tr>
+                  ) : (
+                    students.map((row, index) => (
+                      <tr key={row.id ?? `${row.email}-${index}`}>
+                        <td>{index + 1}</td>
+                        <td>{row.name}</td>
+                        <td>{row.email}</td>
+                        <td>{row.phone}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
             </div>
           </div>
 

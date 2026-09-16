@@ -611,6 +611,40 @@ tr:nth-child(even) td {
   padding: 16px;
 }
 
+.register-panel,
+.students-table-panel {
+  margin-top: 22px;
+  background: #f8faf8;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 18px 16px;
+}
+
+.register-panel h3,
+.students-table-panel h3 {
+  color: var(--primary-color);
+  font-size: 22px;
+  margin-bottom: 14px;
+}
+
+.register-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.register-form input {
+  width: 100%;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 12px 14px;
+  font-size: 15px;
+}
+
+.students-table-wrap {
+  overflow-x: auto;
+}
+
 .attendance-box h3 {
   color: var(--primary-color);
   font-size: 22px;
