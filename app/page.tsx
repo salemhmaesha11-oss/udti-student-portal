@@ -46,52 +46,94 @@ type TabKey = 'grades' | 'record' | 'status' | 'schedule';
 
 type StudentRow = {
   id?: number;
-  name: string;
-  email: string;
-  phone: string;
+  'الرقم الجامعي'?: string | number;
+  'كلمة السر'?: string;
+  'اسم الطالب'?: string;
+  'اسم الاب'?: string;
+  'الكنية'?: string;
+  'القسم'?: string;
+  'رقم الهاتف'?: string;
+  'نوع التسجيل'?: string;
+  'ملاحظة'?: string;
+  'البريد الإلكتروني'?: string;
+  'الفئة'?: string;
+  'تاريخ_تغيير_الفئة'?: string | null;
+  'تاريخ الإنشاء'?: string | null;
+  'السنه الدراسية'?: string | number;
 };
 
 export default function Home() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [activeTab, setActiveTab] = useState<TabKey>('grades');
   const [notice, setNotice] = useState('يرجى تسجيل الدخول لعرض نتائجك');
-  const [loginData, setLoginData] = useState({ email: student.email, password: '' });
+  const [loginData, setLoginData] = useState({ studentId: '', password: '' });
   const [studentEmail, setStudentEmail] = useState(student.email);
   const [studentPass, setStudentPass] = useState(student.password);
   const [studentClass, setStudentClass] = useState('A-201');
+  const [loggedStudent, setLoggedStudent] = useState<StudentRow | null>(null);
   const [registerName, setRegisterName] = useState('');
   const [registerEmail, setRegisterEmail] = useState('');
   const [registerPhone, setRegisterPhone] = useState('');
+  const [registerPassword, setRegisterPassword] = useState('');
   const [students, setStudents] = useState<StudentRow[]>([]);
 
   const fetchStudents = async () => {
-    const { data, error } = await supabase.from('students').select('*').order('id', { ascending: false });
+    const { data, error } = await supabase
+      .from('students')
+      .select('*')
+      .order('id', { ascending: false });
 
     if (error) {
       setNotice('تعذر جلب بيانات الطلاب من Supabase');
       return;
     }
 
-    setStudents(data ?? []);
+    setStudents((data ?? []) as StudentRow[]);
   };
 
   useEffect(() => {
     fetchStudents();
   }, []);
 
-  const handleLogin = (event: FormEvent) => {
+  const handleLogin = async (event: FormEvent) => {
     event.preventDefault();
 
-    if (
-      loginData.email.trim().toLowerCase() === student.email.toLowerCase() &&
-      loginData.password === student.defaultPassword
-    ) {
-      setIsLoggedIn(true);
-      setNotice('تم تسجيل الدخول بنجاح');
+    const studentId = loginData.studentId.trim();
+    const password = loginData.password.trim();
+
+    if (!studentId || !password) {
+      setNotice('يرجى إدخال الرقم الجامعي وكلمة السر');
       return;
     }
 
-    setNotice('بيانات الدخول غير صحيحة. استخدم البريد: student@udti.edu وكلمة المرور: 123456');
+    const { data, error } = await supabase
+      .from('students')
+      .select('*')
+      .eq('الرقم الجامعي', studentId)
+      .maybeSingle();
+
+    if (error) {
+      setNotice(`تعذر البحث عن الطالب في قاعدة البيانات: ${error.message}`);
+      return;
+    }
+
+    if (!data) {
+      setNotice('الرقم الجامعي غير موجود في قاعدة البيانات');
+      return;
+    }
+
+    const storedPassword = String(data['كلمة السر'] ?? '').trim();
+    if (storedPassword !== password) {
+      setNotice('كلمة السر غير صحيحة');
+      return;
+    }
+
+    setLoggedStudent(data as StudentRow);
+    setStudentEmail(String(data['البريد الإلكتروني'] ?? ''));
+    setStudentPass(storedPassword);
+    setStudentClass(String(data['الفئة'] ?? ''));
+    setIsLoggedIn(true);
+    setNotice(`تم تسجيل الدخول بنجاح، مرحباً ${data['اسم الطالب'] ?? 'الطالب'}`);
   };
 
   const updateEmail = () => {
@@ -130,15 +172,26 @@ export default function Home() {
   const handleRegister = async (event: FormEvent) => {
     event.preventDefault();
 
-    if (!registerName.trim() || !registerEmail.trim() || !registerPhone.trim()) {
-      setNotice('يرجى تعبئة الاسم والبريد الإلكتروني ورقم الهاتف');
+    if (!registerName.trim() || !registerEmail.trim() || !registerPhone.trim() || !registerPassword.trim()) {
+      setNotice('يرجى تعبئة الاسم والبريد الإلكتروني ورقم الهاتف وكلمة السر');
       return;
     }
 
-    const payload = {
-      name: registerName.trim(),
-      email: registerEmail.trim(),
-      phone: registerPhone.trim(),
+    const payload: Record<string, unknown> = {
+      'الرقم الجامعي': `ST-${Date.now().toString().slice(-6)}`,
+      'كلمة السر': registerPassword.trim(),
+      'اسم الطالب': registerName.trim(),
+      'اسم الاب': 'غير محدد',
+      'الكنية': 'غير محدد',
+      'القسم': 'غير محدد',
+      'رقم الهاتف': registerPhone.trim(),
+      'نوع التسجيل': 'مباشر',
+      'ملاحظة': 'تم التسجيل من نموذج الموقع',
+      'البريد الإلكتروني': registerEmail.trim(),
+      'الفئة': 'غير محدد',
+      'تاريخ_تغيير_الفئة': new Date().toISOString(),
+      'تاريخ الإنشاء': new Date().toISOString(),
+      'السنه الدراسية': '2026',
     };
 
     const { error } = await supabase.from('students').insert([payload]);
@@ -152,6 +205,7 @@ export default function Home() {
     setRegisterName('');
     setRegisterEmail('');
     setRegisterPhone('');
+    setRegisterPassword('');
     await fetchStudents();
   };
 
@@ -162,7 +216,8 @@ export default function Home() {
 
   const logout = () => {
     setIsLoggedIn(false);
-    setLoginData({ email: student.email, password: '' });
+    setLoggedStudent(null);
+    setLoginData({ studentId: '', password: '' });
     setNotice('تم تسجيل الخروج بنجاح');
   };
 
@@ -177,44 +232,49 @@ export default function Home() {
     return (
       <main className="login-shell" dir="rtl">
         <div className="login-card">
-          <div className="login-header">
+          <div className="institute-header login-institute-header">
             <img
               className="login-logo"
               src="https://drive.google.com/thumbnail?id=1WBYFxtmLUfuREUY1H5Uso5ltomjshWlq&sz=w1000"
               alt="شعار المعهد"
             />
-            <h1>بوابة الطالب</h1>
-            <p>جامعة اللاذقية - المعهد التقاني لطب الأسنان</p>
+            <h2>المعهد التقاني لطب الأسنان</h2>
+            <h3>جامعة اللاذقية</h3>
           </div>
 
-          <form onSubmit={handleLogin} className="login-form">
-            <label>
-              البريد الإلكتروني
-              <input
-                type="email"
-                value={loginData.email}
-                onChange={(event) => setLoginData({ ...loginData, email: event.target.value })}
-                placeholder="student@udti.edu"
-              />
-            </label>
+          <h1 className="login-title">استعلام قسم تعويضات أسنان</h1>
 
-            <label>
-              كلمة المرور
+          <form onSubmit={handleLogin} className="login-form">
+            <div className="form-group">
+              <input
+                type="text"
+                value={loginData.studentId}
+                onChange={(event) => setLoginData({ ...loginData, studentId: event.target.value })}
+                placeholder="الرقم الجامعي"
+                inputMode="numeric"
+                required
+              />
+            </div>
+
+            <div className="form-group password-container">
               <input
                 type="password"
                 value={loginData.password}
                 onChange={(event) => setLoginData({ ...loginData, password: event.target.value })}
-                placeholder="••••••"
+                placeholder="كلمة السر"
+                required
               />
-            </label>
+              <button type="button" className="toggle-password" aria-label="إظهار كلمة السر">
+                إظهار
+              </button>
+            </div>
 
-            <button type="submit" className="login-button">تسجيل الدخول</button>
+            <button type="submit" className="login-button">عرض</button>
           </form>
 
           <div className="login-help">
-            <strong>بيانات الدخول التجريبية:</strong>
-            <span>student@udti.edu</span>
-            <span>123456</span>
+            <strong>ملاحظات:</strong>
+            <span>استخدم الرقم الجامعي وكلمة السر الخاصة بك</span>
           </div>
 
           <div className="system-notice">{notice}</div>
@@ -286,12 +346,12 @@ export default function Home() {
           </div>
 
           <div className="student-info">
-            <div className="info-item"><span className="info-label"><i className="fa-solid fa-user" /> الاسم</span> {student.name}</div>
-            <div className="info-item"><span className="info-label"><i className="fa-solid fa-id-card" /> الرقم الجامعي</span> {student.id}</div>
-            <div className="info-item"><span className="info-label"><i className="fa-solid fa-building-columns" /> القسم</span> {student.faculty}</div>
-            <div className="info-item"><span className="info-label"><i className="fa-solid fa-graduation-cap" /> التخصص</span> {student.major}</div>
-            <div className="info-item"><span className="info-label"><i className="fa-solid fa-layer-group" /> الفصل</span> {student.level}</div>
-            <div className="info-item"><span className="info-label"><i className="fa-solid fa-check-circle" /> الحالة</span> {student.status}</div>
+            <div className="info-item"><span className="info-label"><i className="fa-solid fa-user" /> الاسم</span> {loggedStudent?.['اسم الطالب'] ?? student.name}</div>
+            <div className="info-item"><span className="info-label"><i className="fa-solid fa-id-card" /> الرقم الجامعي</span> {loggedStudent?.['الرقم الجامعي'] ?? student.id}</div>
+            <div className="info-item"><span className="info-label"><i className="fa-solid fa-building-columns" /> القسم</span> {loggedStudent?.['القسم'] ?? student.faculty}</div>
+            <div className="info-item"><span className="info-label"><i className="fa-solid fa-graduation-cap" /> اسم الأب</span> {loggedStudent?.['اسم الاب'] ?? 'غير متوفر'}</div>
+            <div className="info-item"><span className="info-label"><i className="fa-solid fa-layer-group" /> الفئة</span> {loggedStudent?.['الفئة'] ?? studentClass}</div>
+            <div className="info-item"><span className="info-label"><i className="fa-solid fa-check-circle" /> السنة الدراسية</span> {loggedStudent?.['السنه الدراسية'] ?? student.level}</div>
           </div>
 
           <div className="student-details-grid">
@@ -305,11 +365,11 @@ export default function Home() {
             </div>
             <div className="detail-item">
               <div className="detail-label">البريد الإلكتروني</div>
-              <div className="detail-value">{studentEmail}</div>
+              <div className="detail-value">{studentEmail || loggedStudent?.['البريد الإلكتروني'] || 'غير متوفر'}</div>
             </div>
             <div className="detail-item">
-              <div className="detail-label">كلمة المرور</div>
-              <div className="detail-value">{studentPass}</div>
+              <div className="detail-label">كلمة السر</div>
+              <div className="detail-value">{studentPass || loggedStudent?.['كلمة السر'] || 'غير متوفر'}</div>
             </div>
           </div>
 
@@ -463,6 +523,12 @@ export default function Home() {
                 value={registerPhone}
                 onChange={(event) => setRegisterPhone(event.target.value)}
               />
+              <input
+                type="password"
+                placeholder="كلمة السر"
+                value={registerPassword}
+                onChange={(event) => setRegisterPassword(event.target.value)}
+              />
               <button type="submit" className="btn btn-primary">حفظ في Supabase</button>
             </form>
           </div>
@@ -486,11 +552,11 @@ export default function Home() {
                     </tr>
                   ) : (
                     students.map((row, index) => (
-                      <tr key={row.id ?? `${row.email}-${index}`}>
+                      <tr key={row.id ?? `${row['البريد الإلكتروني'] ?? 'student'}-${index}`}>
                         <td>{index + 1}</td>
-                        <td>{row.name}</td>
-                        <td>{row.email}</td>
-                        <td>{row.phone}</td>
+                        <td>{row['اسم الطالب'] ?? 'غير مذكور'}</td>
+                        <td>{row['البريد الإلكتروني'] ?? 'غير متوفر'}</td>
+                        <td>{row['رقم الهاتف'] ?? 'غير متوفر'}</td>
                       </tr>
                     ))
                   )}
