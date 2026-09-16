@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 
 type StudentRow = {
@@ -22,6 +22,15 @@ type AttendanceEntry = {
   status: AttendanceStatus;
   timestamp: string | null;
   year: string;
+};
+
+type SupervisorRow = {
+  'اسم المستخدم'?: string;
+  username?: string;
+  'كلمة المرور'?: string;
+  password?: string;
+  'الدرجة'?: string | number;
+  degree?: string | number;
 };
 
 const tableCandidates = {
@@ -46,6 +55,34 @@ const yearOptions = ['أولى', 'ثانية'];
 const normalizeText = (value: unknown) => {
   if (value === null || value === undefined || value === '') return 'غير متوفر';
   return String(value).trim();
+};
+
+const normalizeSupervisorDegree = (value: unknown) => {
+  const text = normalizeText(value).replace(/\s+/g, '').toLowerCase();
+  if (['1', '١', 'one'].includes(text)) return '1';
+  if (['2', '٢', 'two'].includes(text)) return '2';
+  if (['3', '٣', 'three'].includes(text)) return '3';
+  return text;
+};
+
+const normalizeSupervisorValue = (value: unknown) => {
+  return normalizeText(value).replace(/\s+/g, '').toLowerCase();
+};
+
+const getSupervisorCredentials = (row: Record<string, unknown>) => {
+  const values = Object.values(row)
+    .filter((item) => item !== null && item !== undefined && String(item).trim() !== '')
+    .map((item) => String(item).trim());
+
+  const namedUsername = row['اسم المستخدم'] ?? row.username ?? row['username'] ?? row['اسم_المستخدم'] ?? row['user_name'] ?? '';
+  const namedPassword = row['كلمة المرور'] ?? row.password ?? row['password'] ?? row['كلمة_المرور'] ?? row['pass'] ?? '';
+  const namedDegree = row['الدرجة'] ?? row.degree ?? row['degree'] ?? row['درجه'] ?? row['rank'] ?? '';
+
+  return {
+    username: String(namedUsername || values[0] || ''),
+    password: String(namedPassword || values[1] || ''),
+    degree: String(namedDegree || values[2] || ''),
+  };
 };
 
 const normalizeYearValue = (value: unknown) => {
@@ -83,6 +120,62 @@ const getSupabaseErrorText = (error: unknown) => {
 
 const getStudentIdentifier = (student: StudentRow) => {
   return String(student['الرقم الجامعي'] ?? student.id ?? '').trim();
+};
+
+const findSupervisorLogin = async (username: string, password: string) => {
+  const tableName = 'المشرفين';
+  const { data, error } = await supabase.from(tableName).select('*');
+
+  if (error) {
+    throw error;
+  }
+
+  const rows = Array.isArray(data) ? (data as Record<string, unknown>[]) : [];
+
+  for (const row of rows) {
+    const values = Object.values(row)
+      .filter((item) => item !== null && item !== undefined && String(item).trim() !== '')
+      .map((item) => String(item).trim());
+
+    if (values.length < 3) continue;
+
+    const [rawUsername, rawPassword, rawDegree] = values;
+    const userValue = normalizeSupervisorValue(rawUsername);
+    const passwordValue = normalizeSupervisorValue(rawPassword);
+    const degreeValue = normalizeSupervisorDegree(rawDegree);
+    const normalizedInputUser = normalizeSupervisorValue(username);
+    const normalizedInputPassword = normalizeSupervisorValue(password);
+    const isAllowedDegree = ['1', '2', '3', '١', '٢', '٣'].includes(degreeValue);
+
+    if (userValue !== normalizedInputUser) {
+      continue;
+    }
+
+    if (passwordValue !== normalizedInputPassword) {
+      return {
+        match: false,
+        reason: 'password',
+        row,
+        expectedPassword: rawPassword,
+        enteredPassword: password,
+        tableName,
+      };
+    }
+
+    if (!isAllowedDegree) {
+      return {
+        match: false,
+        reason: 'degree',
+        row,
+        expectedDegree: rawDegree,
+        tableName,
+      };
+    }
+
+    return { match: true, row, tableName };
+  }
+
+  return { match: false, reason: 'username', tableName };
 };
 
 const fetchStudentsByClass = async (selectedClass: string, selectedYear: string) => {
@@ -183,11 +276,100 @@ export default function AttendancePage() {
   const [selectedCourse, setSelectedCourse] = useState('');
   const [selectedClass, setSelectedClass] = useState('أ');
   const [selectedYear, setSelectedYear] = useState('أولى');
-  const [notice, setNotice] = useState('يرجى اختيار المادة والفئة لبدء الجلسة');
+  const [notice, setNotice] = useState('يرجى تسجيل دخول المشرف لبدء الجلسة');
   const [sessionActive, setSessionActive] = useState(false);
   const [students, setStudents] = useState<StudentRow[]>([]);
   const [attendanceData, setAttendanceData] = useState<Record<string, AttendanceEntry>>({});
   const [loading, setLoading] = useState(false);
+  const [supervisorLoggedIn, setSupervisorLoggedIn] = useState(false);
+  const [supervisorUsername, setSupervisorUsername] = useState('');
+  const [supervisorPassword, setSupervisorPassword] = useState('');
+  const [supervisorNames, setSupervisorNames] = useState<string[]>([]);
+  const [supervisorLoadStatus, setSupervisorLoadStatus] = useState('');
+
+  const loadSupervisorNames = async () => {
+    const candidateTables = ['المشرفين', 'supervisors', 'Supervisor', 'supervisor'];
+
+    for (const tableName of candidateTables) {
+      const { data, error } = await supabase.from(tableName).select('*').limit(50);
+
+      if (error) {
+        continue;
+      }
+
+      const rows = Array.isArray(data) ? (data as Record<string, unknown>[]) : [];
+      const names = rows
+        .map((row) => {
+          const values = Object.values(row)
+            .filter((item) => item !== null && item !== undefined && String(item).trim() !== '')
+            .map((item) => String(item).trim());
+          return values[0] ?? '';
+        })
+        .filter((name) => name && name !== '');
+
+      if (names.length > 0) {
+        setSupervisorNames(names);
+        setSupervisorLoadStatus(`تم جلب ${names.length} اسم من جدول ${tableName}`);
+        return;
+      }
+
+      setSupervisorNames([]);
+      setSupervisorLoadStatus(`تم الاتصال بجدول ${tableName} لكنه لا يحتوي على بيانات`);
+      return;
+    }
+
+    setSupervisorNames([]);
+    setSupervisorLoadStatus('لم يتم العثور على أي جدول باسم المشرفين أو supervisors. تحقق من اسم الجدول في Supabase.');
+  };
+
+  useEffect(() => {
+    loadSupervisorNames();
+  }, []);
+
+  const handleSupervisorLogin = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    const username = supervisorUsername.trim();
+    const password = supervisorPassword.trim();
+
+    if (!username || !password) {
+      setNotice('يرجى إدخال اسم المستخدم وكلمة المرور');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await loadSupervisorNames();
+      const supervisor = await findSupervisorLogin(username, password);
+      if (!supervisor || !('match' in supervisor) || supervisor.match !== true) {
+        const failedReason = supervisor && 'reason' in supervisor ? supervisor.reason : 'username';
+
+        if (failedReason === 'username') {
+          setNotice('اسم المستخدم غير موجود في جدول المشرفين');
+        } else if (failedReason === 'password') {
+          setNotice(`كلمة المرور غير صحيحة. كلمة المرور الصحيحة في الجدول هي: ${String((supervisor as any)?.expectedPassword ?? '')}`);
+        } else if (failedReason === 'degree') {
+          setNotice(`الدرجة غير مسموحة. الدرجة في الجدول هي: ${String((supervisor as any)?.expectedDegree ?? '')} - المسموح فقط 1 أو 2 أو 3`);
+        } else {
+          setNotice('اسم المستخدم أو كلمة المرور غير صحيحة أو الدرجة غير مسموحة');
+        }
+
+        setLoading(false);
+        return;
+      }
+
+      const row = supervisor.row as Record<string, unknown>;
+      const displayName = String(row[Object.keys(row)[0]] ?? 'المشرف');
+      setSupervisorLoggedIn(true);
+      setNotice(`مرحباً ${displayName} - تم تسجيل دخول المشرف بنجاح`);
+    } catch (error) {
+      const message = getSupabaseErrorText(error);
+      console.error('Supervisor auth error:', message);
+      setNotice(`حدث خطأ في تسجيل دخول المشرف: ${message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const stats = useMemo(() => {
     const total = Object.keys(attendanceData).length;
@@ -323,9 +505,74 @@ export default function AttendancePage() {
       <div className="attendance-page">
         <div className="attendance-topbar">
           <Link href="/" className="back-link">العودة للرئيسية</Link>
+          {supervisorLoggedIn && (
+            <button
+              type="button"
+              className="back-link"
+              onClick={() => {
+                setSupervisorLoggedIn(false);
+                setSupervisorUsername('');
+                setSupervisorPassword('');
+                setNotice('تم تسجيل خروج المشرف');
+              }}
+              style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}
+            >
+              تسجيل خروج المشرف
+            </button>
+          )}
         </div>
 
-        <header className="attendance-header">
+        {!supervisorLoggedIn && (
+          <section className="panel">
+            <div className="panel-header">
+              <span>تسجيل دخول المشرف</span>
+            </div>
+
+            <form onSubmit={handleSupervisorLogin}>
+              <div className="field-group">
+                <label htmlFor="supervisor-user">اسم المستخدم</label>
+                <input
+                  id="supervisor-user"
+                  type="text"
+                  value={supervisorUsername}
+                  onChange={(event) => setSupervisorUsername(event.target.value)}
+                  placeholder="أدخل اسم المستخدم"
+                  required
+                />
+              </div>
+
+              <div className="field-group">
+                <label htmlFor="supervisor-password">كلمة المرور</label>
+                <input
+                  id="supervisor-password"
+                  type="password"
+                  value={supervisorPassword}
+                  onChange={(event) => setSupervisorPassword(event.target.value)}
+                  placeholder="أدخل كلمة المرور"
+                  required
+                />
+              </div>
+
+              <button className="action-button primary" type="submit" disabled={loading}>
+                {loading ? 'جاري التحقق...' : 'دخول المشرف'}
+              </button>
+            </form>
+
+            {supervisorLoadStatus && (
+              <div className="notice-box" style={{ marginTop: 16, color: '#374151', fontSize: 14 }}>
+                {supervisorLoadStatus}
+              </div>
+            )}
+          </section>
+        )}
+
+        {notice && <div className="notice-box">{notice}</div>}
+
+        {!supervisorLoggedIn && <div className="loading-box">يجب تسجيل دخول المشرف قبل استخدام نظام الحضور والغياب</div>}
+
+        {supervisorLoggedIn && (
+          <>
+            <header className="attendance-header">
           <div className="attendance-header-inner">
             <img
               src="https://drive.google.com/thumbnail?id=1WBYFxtmLUfuREUY1H5Uso5ltomjshWlq&sz=w1000"
@@ -341,7 +588,7 @@ export default function AttendancePage() {
 
         <div className="attendance-title">نظام الحضور والغياب الإلكتروني</div>
 
-        {!sessionActive && (
+        {supervisorLoggedIn && !sessionActive && (
           <section className="panel">
             <div className="panel-header">
               <span>إعدادات الجلسة</span>
@@ -382,11 +629,9 @@ export default function AttendancePage() {
           </section>
         )}
 
-        {notice && <div className="notice-box">{notice}</div>}
+        {supervisorLoggedIn && loading && <div className="loading-box">جاري تحميل البيانات...</div>}
 
-        {loading && <div className="loading-box">جاري تحميل البيانات...</div>}
-
-        {sessionActive && (
+        {supervisorLoggedIn && sessionActive && (
           <section className="panel">
             <div className="panel-header">
               <span>جلسة الحضور النشطة</span>
@@ -458,6 +703,8 @@ export default function AttendancePage() {
               </button>
             </div>
           </section>
+        )}
+          </>
         )}
       </div>
     </main>

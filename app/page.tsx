@@ -299,10 +299,6 @@ export default function Home() {
 
           <div className="system-notice">{notice}</div>
 
-          <div className="login-help" style={{ marginTop: 14 }}>
-            <strong>الصفحات:</strong>
-            <a href="/attendance" style={{ color: '#2d5d92', fontWeight: 700, textDecoration: 'none' }}>فتح نظام الحضور والغياب</a>
-          </div>
         </div>
       </main>
     );
