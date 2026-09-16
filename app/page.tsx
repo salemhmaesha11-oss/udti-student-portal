@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { FormEvent, useEffect, useState } from 'react';
 import {
   getAttendanceForStudent,
@@ -291,6 +292,12 @@ export default function Home() {
 
             <button type="submit" className="login-button">عرض</button>
           </form>
+
+          <div style={{ marginTop: 16 }}>
+            <Link href="/attendance/" className="login-button" style={{ display: 'inline-flex', justifyContent: 'center', textDecoration: 'none', width: '100%' }}>
+              لوحة التحكم للمشرفين
+            </Link>
+          </div>
 
           <div className="login-help">
             <strong>ملاحظات:</strong>
