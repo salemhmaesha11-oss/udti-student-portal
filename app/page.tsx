@@ -202,10 +202,10 @@ export default function Home() {
         Promise.resolve({ data: Array.isArray(loggedStudent) ? loggedStudent : [loggedStudent].filter(Boolean) }),
       ]);
 
-      const gradeRows = gradesResult.data.flatMap((row) => extractGrades([row as Record<string, unknown>]));
+      const gradeRows = gradesResult.data.flatMap((row) => extractGrades([row as unknown as Record<string, unknown>]));
       setGrades(gradeRows);
-      setWarnings(warningsResult.data as Record<string, unknown>[]);
-      setAttendanceSummary(parseAttendance(attendanceResult.data as Record<string, unknown>[]));
+      setWarnings(warningsResult.data as unknown as Record<string, unknown>[]);
+      setAttendanceSummary(parseAttendance(attendanceResult.data as unknown as Record<string, unknown>[]));
 
       const statusData = (statusResult.data[0] as Record<string, unknown> | undefined) ?? (loggedStudent as Record<string, unknown> | null) ?? {};
       const statusValue = getValueByKeys(statusData, ['الحالة', 'status', 'الحالة_الدراسية']) ?? 'غير متوفر';
