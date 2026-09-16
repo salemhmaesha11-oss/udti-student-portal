@@ -194,7 +194,8 @@ export default function Home() {
         getWarningsForStudent(studentId).then((rows) => ({ data: rows })),
         getTableRows(['أعمال_السنة', 'annual_works', 'works', 'student_works']).then(({ data }) => ({
           data: Array.isArray(data) ? data.filter((row) => {
-            const rowStudentId = getValueByKeys(row as Record<string, unknown>, ['الرقم الجامعي', 'student_id', 'studentId']);
+            const rowRecord = row as unknown as Record<string, unknown>;
+            const rowStudentId = getValueByKeys(rowRecord, ['الرقم الجامعي', 'student_id', 'studentId']);
             return String(rowStudentId ?? '') === String(studentId);
           }) : [],
         })),
