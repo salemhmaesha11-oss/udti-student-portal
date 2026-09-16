@@ -1,27 +1,47 @@
 'use client';
 
-import { FormEvent, useState } from 'react';
-import { supabase } from '../lib/supabase';
-
-type StudentRow = {
-  id?: number;
-  'الرقم الجامعي'?: string | number;
-  'كلمة السر'?: string;
-  'اسم الطالب'?: string;
-  'اسم الاب'?: string;
-  'الكنية'?: string;
-  'القسم'?: string;
-  'رقم الهاتف'?: string;
-  'نوع التسجيل'?: string;
-  'ملاحظة'?: string;
-  'البريد الإلكتروني'?: string;
-  'الفئة'?: string;
-  'تاريخ_تغيير_الفئة'?: string | null;
-  'تاريخ الإنشاء'?: string | null;
-  'السنه الدراسية'?: string | number;
-};
+import { FormEvent, useEffect, useState } from 'react';
+import {
+  getAttendanceForStudent,
+  getStudentById,
+  getWarningsForStudent,
+  getRecordValue,
+  normalizeText,
+  StudentRow,
+} from '../lib/studentData';
 
 type TabKey = 'grades' | 'record' | 'status' | 'schedule';
+
+type GradeEntry = {
+  subject: string;
+  annual: number | null;
+  theory: number | null;
+  practical: number | null;
+  total: number | null;
+  assistance: string;
+};
+
+const metadataKeys = new Set([
+  'id',
+  'الرقم الجامعي',
+  'كلمة السر',
+  'اسم الطالب',
+  'اسم الاب',
+  'الكنية',
+  'القسم',
+  'رقم الهاتف',
+  'نوع التسجيل',
+  'ملاحظة',
+  'البريد الإلكتروني',
+  'الفئة',
+  'تاريخ_تغيير_الفئة',
+  'تاريخ الإنشاء',
+  'السنه الدراسية',
+  'created_at',
+  'updated_at',
+  'createdAt',
+  'updatedAt',
+]);
 
 const formatStudentValue = (value: string | number | null | undefined) => {
   if (value === null || value === undefined || value === '') return 'غير متوفر';
@@ -42,12 +62,117 @@ const formatDate = (value: string | null | undefined) => {
   }
 };
 
+const toNumber = (value: unknown): number | null => {
+  if (typeof value === 'number' && !Number.isNaN(value)) return value;
+  if (typeof value === 'string') {
+    const cleaned = value.trim().replace(/,/g, '').replace(/[^0-9.-]/g, '');
+    if (!cleaned || cleaned === '-' || cleaned === '.') return null;
+    const parsed = Number(cleaned);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+};
+
+const getValueByKeys = (row: Record<string, unknown>, keys: string[]) => {
+  for (const key of keys) {
+    if (row[key] !== undefined && row[key] !== null && row[key] !== '') return row[key];
+  }
+  return undefined;
+};
+
+const extractGrades = (rows: Record<string, unknown>[]): GradeEntry[] => {
+  if (!rows.length) return [];
+
+  const first = rows[0];
+  const gradeRows: GradeEntry[] = [];
+
+  Object.entries(first).forEach(([key, value]) => {
+    if (metadataKeys.has(key)) return;
+    if (value === null || value === undefined || value === '') return;
+
+    const parsed = toNumber(value);
+    if (parsed === null) return;
+
+    gradeRows.push({
+      subject: key,
+      annual: parsed,
+      theory: null,
+      practical: null,
+      total: parsed,
+      assistance: parsed >= 50 ? 'مقبول' : 'غير مقبول',
+    });
+  });
+
+  if (gradeRows.length) return gradeRows;
+
+  return rows.flatMap((row) => {
+    return Object.entries(row)
+      .filter(([key, value]) => !metadataKeys.has(key) && value !== null && value !== undefined && value !== '')
+      .map(([subject, value]) => {
+        const numeric = toNumber(value);
+        return {
+          subject,
+          annual: numeric,
+          theory: null,
+          practical: null,
+          total: numeric,
+          assistance: numeric !== null && numeric >= 50 ? 'مقبول' : 'غير مقبول',
+        };
+      });
+  });
+};
+
+const parseAttendance = (rows: Record<string, unknown>[]) => {
+  const summary = { present: 0, absent: 0, waiting: 0 };
+
+  rows.forEach((row) => {
+    const status = getValueByKeys(row, ['الحضور', 'حضور', 'status', 'الحالة', 'attendance']) as string | number | boolean | undefined;
+    const normalized = String(status ?? '').trim().toLowerCase();
+
+    if (status === true || normalized === 'حاضر' || normalized === 'present' || normalized === '1' || normalized === 'yes') {
+      summary.present += 1;
+    } else if (status === false || normalized === 'غائب' || normalized === 'absent' || normalized === '0' || normalized === 'no') {
+      summary.absent += 1;
+    } else {
+      summary.waiting += 1;
+    }
+  });
+
+  return [
+    { label: 'حاضر', value: String(summary.present), tone: 'present' },
+    { label: 'غائب', value: String(summary.absent), tone: 'absent' },
+    { label: 'منتظر', value: String(summary.waiting), tone: 'waiting' },
+  ];
+};
+
+const getTableRows = async (tableNames: string[], select = '*') => {
+  for (const tableName of tableNames) {
+    const { data, error } = await supabase.from(tableName).select(select).limit(1);
+    if (!error) return { data: data ?? [], tableName };
+    const message = String(error.message || '');
+    if (message.includes('does not exist') || message.includes('not found') || message.includes('relation')) {
+      continue;
+    }
+    return { data: data ?? [], tableName, error };
+  }
+
+  return { data: [], tableName: tableNames[0], error: null };
+};
+
 export default function Home() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [activeTab, setActiveTab] = useState<TabKey>('grades');
   const [notice, setNotice] = useState('يرجى تسجيل الدخول لعرض نتائجك');
   const [loginData, setLoginData] = useState({ studentId: '', password: '' });
   const [loggedStudent, setLoggedStudent] = useState<StudentRow | null>(null);
+  const [grades, setGrades] = useState<GradeEntry[]>([]);
+  const [warnings, setWarnings] = useState<Record<string, unknown>[]>([]);
+  const [attendanceSummary, setAttendanceSummary] = useState([
+    { label: 'حاضر', value: '0', tone: 'present' },
+    { label: 'غائب', value: '0', tone: 'absent' },
+    { label: 'منتظر', value: '0', tone: 'waiting' },
+  ]);
+  const [studentStatus, setStudentStatus] = useState<string>('غير متوفر');
 
   const tabs = [
     { key: 'grades', label: 'العلامات' },
@@ -56,6 +181,37 @@ export default function Home() {
     { key: 'schedule', label: 'الدوام' },
   ] as const;
 
+  useEffect(() => {
+    const loadDashboard = async () => {
+      if (!loggedStudent || !loggedStudent['الرقم الجامعي']) return;
+
+      const studentId = String(loggedStudent['الرقم الجامعي']);
+
+      const [attendanceResult, warningsResult, gradesResult, statusResult] = await Promise.all([
+        getAttendanceForStudent(studentId).then((rows) => ({ data: rows })),
+        getWarningsForStudent(studentId).then((rows) => ({ data: rows })),
+        getTableRows(['أعمال_السنة', 'annual_works', 'works', 'student_works']).then(({ data }) => ({
+          data: Array.isArray(data) ? data.filter((row) => {
+            const rowStudentId = getValueByKeys(row as Record<string, unknown>, ['الرقم الجامعي', 'student_id', 'studentId']);
+            return String(rowStudentId ?? '') === String(studentId);
+          }) : [],
+        })),
+        Promise.resolve({ data: Array.isArray(loggedStudent) ? loggedStudent : [loggedStudent].filter(Boolean) }),
+      ]);
+
+      const gradeRows = gradesResult.data.flatMap((row) => extractGrades([row as Record<string, unknown>]));
+      setGrades(gradeRows);
+      setWarnings(warningsResult.data as Record<string, unknown>[]);
+      setAttendanceSummary(parseAttendance(attendanceResult.data as Record<string, unknown>[]));
+
+      const statusData = (statusResult.data[0] as Record<string, unknown> | undefined) ?? (loggedStudent as Record<string, unknown> | null) ?? {};
+      const statusValue = getValueByKeys(statusData, ['الحالة', 'status', 'الحالة_الدراسية']) ?? 'غير متوفر';
+      setStudentStatus(normalizeText(statusValue));
+    };
+
+    loadDashboard();
+  }, [loggedStudent]);
+
   const handleLogin = async (event: FormEvent) => {
     event.preventDefault();
 
@@ -63,35 +219,26 @@ export default function Home() {
     const password = loginData.password.trim();
 
     if (!studentId || !password) {
-      setNotice('يرجى إدخال الرقم الجامعي وكلمة السر');
+      setNotice('يرجى إدخال الرقم الجامعي وكلة السر');
       return;
     }
 
-    const { data, error } = await supabase
-      .from('students')
-      .select('*')
-      .eq('الرقم الجامعي', studentId)
-      .maybeSingle();
+    const user = await getStudentById(studentId);
 
-    if (error) {
-      setNotice(`تعذر البحث عن الطالب في قاعدة البيانات: ${error.message}`);
-      return;
-    }
-
-    if (!data) {
+    if (!user) {
       setNotice('الرقم الجامعي غير موجود في قاعدة البيانات');
       return;
     }
 
-    const storedPassword = String(data['كلمة السر'] ?? '').trim();
+    const storedPassword = String(getRecordValue(user as Record<string, unknown>, ['كلمة السر', 'password']) ?? '').trim();
     if (storedPassword !== password) {
       setNotice('كلمة السر غير صحيحة');
       return;
     }
 
-    setLoggedStudent(data as StudentRow);
+    setLoggedStudent(user as StudentRow);
     setIsLoggedIn(true);
-    setNotice(`تم تسجيل الدخول بنجاح، مرحباً ${data['اسم الطالب'] ?? 'الطالب'}`);
+    setNotice(`تم تسجيل الدخول بنجاح، مرحباً ${normalizeText(getRecordValue(user as Record<string, unknown>, ['اسم الطالب', 'student_name', 'name']))}`);
   };
 
   const logout = () => {
@@ -151,6 +298,11 @@ export default function Home() {
           </div>
 
           <div className="system-notice">{notice}</div>
+
+          <div className="login-help" style={{ marginTop: 14 }}>
+            <strong>الصفحات:</strong>
+            <a href="/attendance" style={{ color: '#2d5d92', fontWeight: 700, textDecoration: 'none' }}>فتح نظام الحضور والغياب</a>
+          </div>
         </div>
       </main>
     );
@@ -271,19 +423,61 @@ export default function Home() {
 
             {activeTab === 'grades' && (
               <div className="tab-content active">
-                <div className="no-data">
-                  <i className="fa-solid fa-table-list" />
-                  <div>لا توجد بيانات للعلامات حتى الآن.</div>
-                </div>
+                {grades.length === 0 ? (
+                  <div className="no-data">
+                    <i className="fa-solid fa-table-list" />
+                    <div>لا توجد بيانات للعلامات حتى الآن.</div>
+                  </div>
+                ) : (
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>المادة</th>
+                        <th>أعمال السنة</th>
+                        <th>نظري</th>
+                        <th>عملي</th>
+                        <th>المجموع</th>
+                        <th>مساعدة امتحانية</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {grades.map((item) => (
+                        <tr key={item.subject}>
+                          <td>{item.subject}</td>
+                          <td>{item.annual ?? '—'}</td>
+                          <td>{item.theory ?? '—'}</td>
+                          <td>{item.practical ?? '—'}</td>
+                          <td>{item.total ?? '—'}</td>
+                          <td>{item.assistance}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
               </div>
             )}
 
             {activeTab === 'record' && (
               <div className="tab-content active">
-                <div className="no-data">
-                  <i className="fa-solid fa-clipboard-list" />
-                  <div>لا يوجد سجل للطالب في الوقت الحالي.</div>
-                </div>
+                {warnings.length === 0 ? (
+                  <div className="no-data">
+                    <i className="fa-solid fa-clipboard-list" />
+                    <div>لا يوجد سجل للطالب في الوقت الحالي.</div>
+                  </div>
+                ) : (
+                  <div className="warning-list">
+                    {warnings.map((warning, index) => (
+                      <div key={`${warning['الرقم الجامعي'] ?? 'warning'}-${index}`} className="warning-item">
+                        <div className="warning-header">
+                          <strong>{normalizeText(getValueByKeys(warning, ['نوع الإنذار', 'warning_type', 'نوع_الانذار']))}</strong>
+                          <span className="warning-type">{normalizeText(getValueByKeys(warning, ['السبب', 'reason']))}</span>
+                        </div>
+                        <div className="warning-date">{formatDate(String(getValueByKeys(warning, ['التاريخ', 'date', 'created_at']) ?? ''))}</div>
+                        <div className="warning-reason">{normalizeText(getValueByKeys(warning, ['التفاصيل', 'details', 'description']))}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
@@ -293,7 +487,7 @@ export default function Home() {
                   <div className="status-card">
                     <div className="status-icon"><i className="fa-solid fa-check-circle" /></div>
                     <div className="status-title">الحالة الدراسية</div>
-                    <div className="status-data">{formatStudentValue(loggedStudent?.['نوع التسجيل']) || 'غير متوفر'}</div>
+                    <div className="status-data">{studentStatus}</div>
                   </div>
                   <div className="status-card">
                     <div className="status-icon"><i className="fa-solid fa-user-check" /></div>
@@ -311,9 +505,17 @@ export default function Home() {
 
             {activeTab === 'schedule' && (
               <div className="tab-content active">
-                <div className="no-data">
-                  <i className="fa-solid fa-calendar-week" />
-                  <div>لا توجد بيانات للدوام في هذا الوقت.</div>
+                <div className="attendance-box">
+                  <h3>نظام الحضور والغياب</h3>
+                  <div className="attendance-list">
+                    {attendanceSummary.map((item) => (
+                      <div key={item.label} className="attendance-row">
+                        <span className={`attendance-dot ${item.tone}`} />
+                        <span>{item.label}</span>
+                        <strong>{item.value}</strong>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
             )}

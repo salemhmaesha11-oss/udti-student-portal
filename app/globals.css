@@ -903,6 +903,327 @@ tr:nth-child(even) td {
   font-size: 13px;
 }
 
+.attendance-shell {
+  min-height: 100vh;
+  padding: 24px 16px 40px;
+  background: linear-gradient(135deg, #f5f7fa 0%, #e8ecf2 100%);
+}
+
+.attendance-page {
+  width: min(1200px, 100%);
+  margin: 0 auto;
+}
+
+.attendance-topbar {
+  display: flex;
+  justify-content: flex-start;
+  margin-bottom: 16px;
+}
+
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  text-decoration: none;
+  background: rgba(138, 125, 90, 0.12);
+  color: var(--secondary-color);
+  border: 1px solid rgba(138, 125, 90, 0.22);
+  border-radius: 10px;
+  padding: 10px 16px;
+  font-weight: 700;
+}
+
+.attendance-header {
+  background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+  border-radius: 16px 16px 0 0;
+  box-shadow: var(--shadow-soft);
+  padding: 20px 24px;
+  color: #fff;
+}
+
+.attendance-header-inner {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.attendance-logo {
+  width: 84px;
+  height: 84px;
+  object-fit: cover;
+  border-radius: 50%;
+  background: #fff;
+  padding: 6px;
+}
+
+.attendance-header h1 {
+  margin: 0;
+  color: #fff;
+  font-size: clamp(1.5rem, 2vw, 2rem);
+}
+
+.attendance-header p {
+  margin: 6px 0 0;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 1rem;
+}
+
+.attendance-title {
+  background: #fff;
+  color: var(--primary-color);
+  box-shadow: var(--shadow-soft);
+  padding: 18px 20px;
+  text-align: center;
+  font-size: clamp(1.4rem, 2vw, 2rem);
+  font-weight: 800;
+  border-bottom: 4px solid var(--accent-color);
+}
+
+.panel {
+  background: #fff;
+  border-radius: 0 0 16px 16px;
+  box-shadow: var(--shadow-soft);
+  padding: 20px 22px 24px;
+  border-top: 1px solid rgba(0, 0, 0, 0.04);
+}
+
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 18px;
+  color: var(--primary-color);
+  font-size: 1.35rem;
+  font-weight: 800;
+}
+
+.field-group {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.field-group label {
+  color: #3d3d3d;
+  font-weight: 700;
+}
+
+.field-group select {
+  width: 100%;
+  border: 1px solid #dfe5e7;
+  border-radius: 10px;
+  padding: 12px 14px;
+  background: #f9fafb;
+  font-size: 15px;
+  color: #1c1c1c;
+}
+
+.notice-box {
+  margin: 20px 0 10px;
+  border-radius: 10px;
+  background: rgba(67, 160, 71, 0.08);
+  color: #2f5a33;
+  border: 1px solid rgba(67, 160, 71, 0.2);
+  padding: 12px 14px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.loading-box {
+  border-radius: 12px;
+  background: #f8f9fa;
+  border: 1px solid #e0e0e0;
+  color: #555;
+  text-align: center;
+  padding: 16px;
+  margin: 16px 0;
+}
+
+.session-info {
+  margin: 0 0 18px;
+  padding: 12px 14px;
+  background: #f8f6f1;
+  border: 1px solid rgba(172, 160, 117, 0.32);
+  border-radius: 10px;
+  color: #3b3b3b;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 14px;
+  margin-bottom: 22px;
+}
+
+.stat-box {
+  background: linear-gradient(135deg, #f8fafb, #eef3f7);
+  border: 1px solid #e4e8ea;
+  border-radius: 12px;
+  padding: 18px 12px;
+  text-align: center;
+}
+
+.stat-value {
+  font-size: clamp(1.8rem, 4vw, 2.4rem);
+  font-weight: 800;
+  color: var(--primary-color);
+}
+
+.stat-label {
+  margin-top: 8px;
+  color: #4d4d4d;
+  font-weight: 700;
+}
+
+.student-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
+}
+
+.student-card {
+  background: #fff;
+  border: 2px solid #e6e6e6;
+  border-radius: 14px;
+  padding: 14px 12px;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.04);
+}
+
+.student-card.present {
+  border-color: rgba(67, 160, 71, 0.5);
+  background: linear-gradient(135deg, #f3fbf4, #ebf9ee);
+}
+
+.student-card.absent {
+  border-color: rgba(229, 57, 53, 0.4);
+  background: linear-gradient(135deg, #fff8f8, #fff0f0);
+}
+
+.student-card.pending {
+  border-color: rgba(244, 183, 64, 0.45);
+  background: linear-gradient(135deg, #fffdf4, #fff7e6);
+}
+
+.student-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.student-name {
+  font-weight: 800;
+  color: #1e1e1e;
+}
+
+.student-id {
+  background: rgba(0, 0, 0, 0.04);
+  color: #555;
+  border-radius: 999px;
+  font-size: 12px;
+  padding: 5px 8px;
+}
+
+.student-meta {
+  color: #5c5c5c;
+  font-size: 0.9rem;
+  margin-bottom: 12px;
+}
+
+.student-actions {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.mini-btn,
+.action-button {
+  border: none;
+  border-radius: 10px;
+  font-family: inherit;
+  font-weight: 800;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.mini-btn {
+  flex: 1;
+  padding: 10px 12px;
+  color: #fff;
+}
+
+.mini-btn.success {
+  background: linear-gradient(135deg, #2bb673, #1e9f5b);
+}
+
+.mini-btn.danger {
+  background: linear-gradient(135deg, #ea4c4c, #d63b39);
+}
+
+.action-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 12px 18px;
+}
+
+.action-button.primary {
+  background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+  color: #fff;
+}
+
+.action-button.warning {
+  background: linear-gradient(135deg, #f2b94b, #d99217);
+  color: #fff;
+}
+
+.mini-btn:hover,
+.action-button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.12);
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 100px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-weight: 800;
+  font-size: 0.82rem;
+  color: #fff;
+}
+
+.status-pill.present {
+  background: linear-gradient(135deg, #2bb673, #1e9f5b);
+}
+
+.status-pill.absent {
+  background: linear-gradient(135deg, #ea4c4c, #d63b39);
+}
+
+.status-pill.pending {
+  background: linear-gradient(135deg, #f4b740, #db8d10);
+}
+
+.timestamp {
+  margin-top: 10px;
+  font-size: 12px;
+  color: #666;
+}
+
+.session-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 22px;
+}
+
 @media (max-width: 768px) {
   .container {
     padding: 22px 14px 18px;
