@@ -1,22 +1,25 @@
-import { ArrowLeftRight, Bell, BookOpen, GraduationCap, ShieldCheck, UserCog, Users, CalendarCheck, ChartColumn, KeyRound, QrCode, PencilLine, Download, CheckCircle2, AlertTriangle, ClipboardList, Settings, Search, Plus, Trash2, FileSpreadsheet, BarChart3, Clock3, BadgeCheck } from 'lucide-react';
-
 const student = {
   name: 'أحمد محمد علي',
   id: '202420011',
+  faculty: 'قسم تعويضات الأسنان',
   major: 'علوم حاسب',
   level: 'السنة الثانية',
   status: 'نشط',
   email: 'student@udti.edu',
   password: '********',
-  attendanceRate: 96,
-  warnings: 2,
 };
 
 const grades = [
-  { subject: 'برمجة', score: 90, theory: 44, practical: 46, annual: 90, assistance: 'مقبول', total: 90 },
-  { subject: 'قواعد بيانات', score: 88, theory: 43, practical: 45, annual: 88, assistance: 'مقبول', total: 88 },
-  { subject: 'شبكات', score: 82, theory: 41, practical: 41, annual: 82, assistance: 'لا', total: 82 },
-  { subject: 'ذكاء اصطناعي', score: 91, theory: 45, practical: 46, annual: 91, assistance: 'مقبول', total: 91 },
+  { subject: 'برمجة', annual: 90, theory: 44, practical: 46, total: 90, assistance: 'مقبول' },
+  { subject: 'قواعد بيانات', annual: 88, theory: 43, practical: 45, total: 88, assistance: 'مقبول' },
+  { subject: 'شبكات', annual: 82, theory: 41, practical: 41, total: 82, assistance: 'لا' },
+  { subject: 'ذكاء اصطناعي', annual: 91, theory: 45, practical: 46, total: 91, assistance: 'مقبول' },
+];
+
+const warnings = [
+  { title: 'تأخر 10 دقائق', date: '2026-09-02', severity: 'منخفض' },
+  { title: 'عدم حضور محاضرة', date: '2026-09-06', severity: 'متوسط' },
+  { title: 'إهمال الواجب', date: '2026-09-11', severity: 'عالي' },
 ];
 
 const schedule = [
@@ -27,284 +30,223 @@ const schedule = [
   { day: 'الأربعاء', items: ['برمجة تطبيقية / 09:00'] },
 ];
 
-const warnings = [
-  { title: 'تأخر 10 دقائق', date: '2026-09-02', severity: 'منخفض' },
-  { title: 'عدم حضور محاضرة', date: '2026-09-06', severity: 'متوسط' },
-  { title: 'إهمال الواجب', date: '2026-09-11', severity: 'عالي' },
-];
-
-const adminMetrics = [
-  { label: 'إجمالي الطلاب', value: '1,248', icon: Users },
-  { label: 'الغياب اليومي', value: '64', icon: Clock3 },
-  { label: 'العلامات المراجعة', value: '89%', icon: CheckCircle2 },
-  { label: 'الإنذارات', value: '120', icon: Bell },
-];
-
 const attendanceSummary = [
-  { label: 'حاضر', value: '184', color: 'bg-emerald-500' },
-  { label: 'غائب', value: '18', color: 'bg-red-500' },
-  { label: 'منتظر', value: '7', color: 'bg-amber-500' },
+  { label: 'حاضر', value: '184', tone: 'present' },
+  { label: 'غائب', value: '18', tone: 'absent' },
+  { label: 'منتظر', value: '7', tone: 'waiting' },
 ];
 
 export default function Home() {
   return (
-    <main className="min-h-screen p-4 sm:p-6 lg:p-8" dir="rtl">
-      <div className="mx-auto max-w-7xl space-y-8">
-        <header className="card overflow-hidden p-6">
-          <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <p className="text-sm font-medium text-primary-600">بوابة الطالب</p>
-              <h1 className="mt-2 text-3xl font-bold text-slate-900">جامعة دبي التقنية</h1>
-            </div>
-            <div className="flex flex-wrap items-center gap-3">
-              <button className="rounded-xl bg-primary-600 px-4 py-2 text-sm font-semibold text-white">تسجيل الدخول</button>
-              <button className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700">لوحة المشرف</button>
-            </div>
-          </div>
-        </header>
-
-        <section className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
-          <div className="card p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-slate-500">مرحباً</p>
-                <h2 className="text-2xl font-bold text-slate-900">{student.name}</h2>
-              </div>
-              <div className="rounded-2xl bg-primary-50 p-3 text-primary-600">
-                <GraduationCap className="h-7 w-7" />
-              </div>
-            </div>
-
-            <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              <InfoTile label="الرقم الجامعي" value={student.id} icon={UserCog} />
-              <InfoTile label="التخصص" value={student.major} icon={BookOpen} />
-              <InfoTile label="الفصل" value={student.level} icon={CalendarCheck} />
-            </div>
-
-            <div className="mt-6 grid gap-4 sm:grid-cols-3">
-              <MiniStat label="المعدل الفصلي" value="92.4%" tone="emerald" />
-              <MiniStat label="المعدل التراكمي" value="90.8%" tone="blue" />
-              <MiniStat label="الحالة الدراسية" value={student.status} tone="purple" />
-            </div>
+    <main className="student-shell" dir="rtl">
+      <div className="student-page">
+        <div className="container" id="mainContainer">
+          <div className="institute-header">
+            <img
+              className="institute-logo"
+              src="https://drive.google.com/thumbnail?id=1WBYFxtmLUfuREUY1H5Uso5ltomjshWlq&sz=w1000"
+              alt="شعار المعهد"
+            />
+            <h2>المعهد التقاني لطب الأسنان</h2>
+            <h3>جامعة اللاذقية</h3>
           </div>
 
-          <div className="card p-6">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-bold text-slate-900">رمز الطالب</h3>
-              <QrCode className="h-5 w-5 text-primary-600" />
-            </div>
-            <div className="mt-6 flex items-center justify-center rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50 p-6">
-              <div className="grid h-44 w-44 place-items-center rounded-2xl bg-white text-center shadow-inner ring-2 ring-slate-200">
-                <div className="text-xs font-bold tracking-[0.35em] text-slate-700">{student.id}</div>
-                <div className="mt-4 h-16 w-16 rounded-xl bg-slate-900" />
-              </div>
+          <div className="barcode-section">
+            <div className="barcode-box">
+              <svg viewBox="0 0 280 90" className="barcode-svg" aria-label="barcode">
+                <rect width="280" height="90" rx="8" fill="#fff" />
+                <g fill="#111827">
+                  <rect x="10" y="20" width="2" height="50" />
+                  <rect x="18" y="20" width="6" height="50" />
+                  <rect x="30" y="20" width="2" height="50" />
+                  <rect x="38" y="20" width="4" height="50" />
+                  <rect x="48" y="20" width="2" height="50" />
+                  <rect x="62" y="20" width="8" height="50" />
+                  <rect x="74" y="20" width="4" height="50" />
+                  <rect x="82" y="20" width="2" height="50" />
+                  <rect x="90" y="20" width="6" height="50" />
+                  <rect x="102" y="20" width="2" height="50" />
+                  <rect x="110" y="20" width="8" height="50" />
+                  <rect x="122" y="20" width="2" height="50" />
+                  <rect x="128" y="20" width="4" height="50" />
+                  <rect x="138" y="20" width="2" height="50" />
+                  <rect x="146" y="20" width="8" height="50" />
+                  <rect x="160" y="20" width="2" height="50" />
+                  <rect x="166" y="20" width="6" height="50" />
+                  <rect x="178" y="20" width="2" height="50" />
+                  <rect x="186" y="20" width="8" height="50" />
+                  <rect x="198" y="20" width="2" height="50" />
+                  <rect x="206" y="20" width="4" height="50" />
+                  <rect x="216" y="20" width="2" height="50" />
+                  <rect x="224" y="20" width="8" height="50" />
+                  <rect x="238" y="20" width="2" height="50" />
+                  <rect x="246" y="20" width="6" height="50" />
+                  <rect x="258" y="20" width="2" height="50" />
+                  <rect x="266" y="20" width="4" height="50" />
+                </g>
+              </svg>
+              <div className="barcode-name">{student.name}</div>
+              <div className="barcode-id">{student.id}</div>
             </div>
           </div>
-        </section>
 
-        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <StatCard title="أعمال السنة" value="94" icon={ChartColumn} accent="emerald" />
-          <StatCard title="العملي" value="91" icon={ClipboardList} accent="blue" />
-          <StatCard title="النظري" value="87" icon={BookOpen} accent="amber" />
-          <StatCard title="المجموع" value="90.8" icon={BadgeCheck} accent="purple" />
-        </section>
-
-        <section className="card p-6">
-          <div className="mb-5 flex items-center justify-between">
-            <h3 className="text-xl font-bold text-slate-900">عرض العلامات الدراسية</h3>
-            <span className="badge bg-primary-50 text-primary-700">مساعدة امتحانية: نعم</span>
+          <div className="header">
+            <h1>الحساب الجامعي</h1>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="min-w-full table-auto border-collapse text-right">
-              <thead>
-                <tr className="bg-slate-50 text-sm text-slate-600">
-                  <th className="px-3 py-3 font-semibold">المادة</th>
-                  <th className="px-3 py-3 font-semibold">أعمال السنة</th>
-                  <th className="px-3 py-3 font-semibold">نظري</th>
-                  <th className="px-3 py-3 font-semibold">عملي</th>
-                  <th className="px-3 py-3 font-semibold">المجموع</th>
-                  <th className="px-3 py-3 font-semibold">مساعدة امتحانية</th>
-                </tr>
-              </thead>
-              <tbody>
-                {grades.map((item) => (
-                  <tr key={item.subject} className="border-t border-slate-200 text-sm text-slate-700">
-                    <td className="px-3 py-3 font-medium">{item.subject}</td>
-                    <td className="px-3 py-3">{item.annual}</td>
-                    <td className="px-3 py-3">{item.theory}</td>
-                    <td className="px-3 py-3">{item.practical}</td>
-                    <td className="px-3 py-3">{item.total}</td>
-                    <td className="px-3 py-3"><span className="badge bg-emerald-100 text-emerald-700">{item.assistance}</span></td>
+          <div className="student-info">
+            <div className="info-item"><span className="info-label"><i className="fa-solid fa-user" /> الاسم</span> {student.name}</div>
+            <div className="info-item"><span className="info-label"><i className="fa-solid fa-id-card" /> الرقم الجامعي</span> {student.id}</div>
+            <div className="info-item"><span className="info-label"><i className="fa-solid fa-building-columns" /> القسم</span> {student.faculty}</div>
+            <div className="info-item"><span className="info-label"><i className="fa-solid fa-graduation-cap" /> التخصص</span> {student.major}</div>
+            <div className="info-item"><span className="info-label"><i className="fa-solid fa-layer-group" /> الفصل</span> {student.level}</div>
+            <div className="info-item"><span className="info-label"><i className="fa-solid fa-check-circle" /> الحالة</span> {student.status}</div>
+          </div>
+
+          <div className="student-details-grid">
+            <div className="detail-item">
+              <div className="detail-label">المعدل الفصلي</div>
+              <div className="detail-value">92.4%</div>
+            </div>
+            <div className="detail-item">
+              <div className="detail-label">المعدل التراكمي</div>
+              <div className="detail-value">90.8%</div>
+            </div>
+            <div className="detail-item">
+              <div className="detail-label">البريد الإلكتروني</div>
+              <div className="detail-value">{student.email}</div>
+            </div>
+            <div className="detail-item">
+              <div className="detail-label">كلمة المرور</div>
+              <div className="detail-value">{student.password}</div>
+            </div>
+          </div>
+
+          <div className="tabs-container">
+            <div className="tabs">
+              <button className="tab active" type="button">العلامات</button>
+              <button className="tab" type="button">السجل</button>
+              <button className="tab" type="button">الحالة</button>
+              <button className="tab" type="button">الدوام</button>
+            </div>
+
+            <div className="tab-content active">
+              <table>
+                <thead>
+                  <tr>
+                    <th>المادة</th>
+                    <th>أعمال السنة</th>
+                    <th>نظري</th>
+                    <th>عملي</th>
+                    <th>المجموع</th>
+                    <th>مساعدة امتحانية</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
+                </thead>
+                <tbody>
+                  {grades.map((item) => (
+                    <tr key={item.subject}>
+                      <td>{item.subject}</td>
+                      <td>{item.annual}</td>
+                      <td>{item.theory}</td>
+                      <td>{item.practical}</td>
+                      <td>{item.total}</td>
+                      <td>{item.assistance}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
 
-        <section className="grid gap-6 xl:grid-cols-[1fr_1fr]">
-          <div className="card p-6">
-            <div className="mb-5 flex items-center justify-between">
-              <h3 className="text-xl font-bold text-slate-900">سجل الإنذارات</h3>
-              <Bell className="h-5 w-5 text-amber-500" />
-            </div>
-            <div className="space-y-4">
-              {warnings.map((warning) => (
-                <div key={warning.title} className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-                  <div>
-                    <p className="font-semibold text-slate-800">{warning.title}</p>
-                    <p className="text-sm text-slate-500">{warning.date}</p>
+              <div className="final-average">
+                <div className="average-title">المعدل التراكمي</div>
+                <div className="average-value">90.8</div>
+                <div className="percentage-container">
+                  <div className="percentage-value">90.8%</div>
+                  <div className="progress-container">
+                    <div className="progress-bar">
+                      <div className="progress-fill" style={{ width: '90.8%' }}>
+                        <span className="progress-text">90.8%</span>
+                      </div>
+                    </div>
                   </div>
-                  <span className={`badge ${warning.severity === 'عالي' ? 'bg-red-100 text-red-700' : warning.severity === 'متوسط' ? 'bg-amber-100 text-amber-700' : 'bg-sky-100 text-sky-700'}`}>
-                    {warning.severity}
-                  </span>
                 </div>
-              ))}
+              </div>
             </div>
-          </div>
 
-          <div className="card p-6">
-            <div className="mb-5 flex items-center justify-between">
-              <h3 className="text-xl font-bold text-slate-900">جدول الدوام الأسبوعي</h3>
-              <CalendarCheck className="h-5 w-5 text-primary-600" />
+            <div className="tab-content">
+              <div className="warning-icon"><i className="fa-solid fa-triangle-exclamation" /></div>
+              <div className="warning-list">
+                {warnings.map((warning) => (
+                  <div key={warning.title} className="warning-item">
+                    <div className="warning-header">
+                      <strong>{warning.title}</strong>
+                      <span className="warning-type">{warning.severity}</span>
+                    </div>
+                    <div className="warning-date">{warning.date}</div>
+                    <div className="warning-reason">تم تسجيل هذا الإنذار وفقاً للسياسات الأكاديمية المعتمدة.</div>
+                  </div>
+                ))}
+              </div>
             </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              {schedule.map((day) => (
-                <div key={day.day} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                  <h4 className="mb-2 font-bold text-slate-800">{day.day}</h4>
-                  <ul className="space-y-2 text-sm text-slate-700">
-                    {day.items.map((item) => (
-                      <li key={item} className="flex items-center gap-2">
-                        <span className="h-2 w-2 rounded-full bg-primary-500" /> {item}
-                      </li>
-                    ))}
-                  </ul>
+
+            <div className="tab-content">
+              <div className="status-grid">
+                <div className="status-card">
+                  <div className="status-icon"><i className="fa-solid fa-check-circle" /></div>
+                  <div className="status-title">الحالة الدراسية</div>
+                  <div className="status-data">نشط</div>
                 </div>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        <section className="card p-6">
-          <div className="mb-6 flex items-center justify-between">
-            <h3 className="text-xl font-bold text-slate-900">حالة الحساب</h3>
-            <ShieldCheck className="h-5 w-5 text-emerald-600" />
-          </div>
-
-          <div className="grid gap-5 lg:grid-cols-3">
-            <SettingCard label="البريد الإلكتروني" value={student.email} icon={PencilLine} />
-            <SettingCard label="كلمة المرور" value={student.password} icon={KeyRound} />
-            <SettingCard label="الفئة" value="A-201" icon={ArrowLeftRight} />
-          </div>
-        </section>
-
-        <section className="card p-6">
-          <div className="mb-6 flex items-center justify-between">
-            <h3 className="text-xl font-bold text-slate-900">لوحة التحكم الإداري</h3>
-            <UserCog className="h-5 w-5 text-slate-700" />
-          </div>
-
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            {adminMetrics.map(({ label, value, icon: Icon }) => (
-              <div key={label} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <div className="flex items-center justify-between">
-                  <p className="text-sm text-slate-500">{label}</p>
-                  <Icon className="h-5 w-5 text-primary-600" />
+                <div className="status-card">
+                  <div className="status-icon"><i className="fa-solid fa-calendar-check" /></div>
+                  <div className="status-title">معدل الحضور</div>
+                  <div className="status-data">96%</div>
                 </div>
-                <p className="mt-3 text-2xl font-bold text-slate-900">{value}</p>
-              </div>
-            ))}
-          </div>
-
-          <div className="mt-6 grid gap-5 lg:grid-cols-[1.1fr_0.9fr]">
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-              <div className="mb-4 flex items-center justify-between">
-                <h4 className="font-bold text-slate-900">إدارة الطلاب</h4>
-                <button className="inline-flex items-center gap-2 rounded-lg bg-primary-600 px-3 py-2 text-sm font-semibold text-white"><Plus className="h-4 w-4" /> إضافة</button>
-              </div>
-              <div className="space-y-3 text-sm text-slate-700">
-                <div className="flex items-center justify-between rounded-xl bg-white p-3"><span>أحمد محمد</span><span className="flex gap-2"><button className="text-primary-600">تعديل</button><button className="text-red-500">حذف</button></span></div>
-                <div className="flex items-center justify-between rounded-xl bg-white p-3"><span>سارة علي</span><span className="flex gap-2"><button className="text-primary-600">تعديل</button><button className="text-red-500">حذف</button></span></div>
-                <div className="flex items-center justify-between rounded-xl bg-white p-3"><span>محمود ناصر</span><span className="flex gap-2"><button className="text-primary-600">تعديل</button><button className="text-red-500">حذف</button></span></div>
+                <div className="status-card">
+                  <div className="status-icon"><i className="fa-solid fa-bell" /></div>
+                  <div className="status-title">عدد الإنذارات</div>
+                  <div className="status-data">3</div>
+                </div>
               </div>
             </div>
 
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-              <div className="mb-4 flex items-center justify-between">
-                <h4 className="font-bold text-slate-900">نظام الحضور والغياب</h4>
-                <CheckCircle2 className="h-5 w-5 text-emerald-600" />
-              </div>
-              <div className="space-y-3">
-                {attendanceSummary.map(({ label, value, color }) => (
-                  <div key={label} className="flex items-center justify-between rounded-xl bg-white p-3 text-sm">
-                    <span className="flex items-center gap-2"><span className={`h-3 w-3 rounded-full ${color}`} /> {label}</span>
-                    <span className="font-bold text-slate-900">{value}</span>
+            <div className="tab-content">
+              <div className="schedule-cards">
+                {schedule.map((day) => (
+                  <div key={day.day} className="schedule-card">
+                    <div className="day-header"><i className="fa-regular fa-calendar" /> {day.day}</div>
+                    <div className="schedule-content">
+                      {day.items.map((item) => (
+                        <div key={item} className="schedule-text">{item}</div>
+                      ))}
+                    </div>
                   </div>
                 ))}
               </div>
             </div>
           </div>
-        </section>
 
-        <footer className="pb-4 pt-2 text-center text-sm text-slate-500">
-          منصة الطلاب والإدارة • جاهزة للنشر على Vercel
-        </footer>
+          <div className="attendance-box">
+            <h3>نظام الحضور والغياب</h3>
+            <div className="attendance-list">
+              {attendanceSummary.map((item) => (
+                <div key={item.label} className="attendance-row">
+                  <span className={`attendance-dot ${item.tone}`} />
+                  <span>{item.label}</span>
+                  <strong>{item.value}</strong>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="action-buttons">
+            <button className="btn btn-primary" type="button">تحديث البريد الإلكتروني</button>
+            <button className="btn btn-primary" type="button">تغيير كلمة المرور</button>
+            <button className="btn btn-primary" type="button">تغيير الفئة</button>
+            <button className="btn btn-danger" type="button">طباعة النتيجة</button>
+          </div>
+
+          <div className="last-updated">آخر تحديث للنظام: 2026/09/16</div>
+        </div>
       </div>
     </main>
-  );
-}
-
-function InfoTile({ label, value, icon: Icon }: { label: string; value: string; icon: any }) {
-  return (
-    <div className="rounded-2xl bg-slate-50 p-4">
-      <div className="flex items-center gap-3">
-        <div className="rounded-xl bg-white p-2 text-primary-600 shadow-sm"><Icon className="h-5 w-5" /></div>
-        <div>
-          <p className="text-xs text-slate-500">{label}</p>
-          <p className="mt-1 font-bold text-slate-800">{value}</p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function StatCard({ title, value, icon: Icon, accent }: { title: string; value: string; icon: any; accent: string }) {
-  const tone = accent === 'emerald' ? 'bg-emerald-100 text-emerald-700' : accent === 'blue' ? 'bg-blue-100 text-blue-700' : accent === 'amber' ? 'bg-amber-100 text-amber-700' : 'bg-violet-100 text-violet-700';
-
-  return (
-    <div className="card p-5">
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-sm text-slate-500">{title}</p>
-          <p className="mt-2 text-3xl font-bold text-slate-900">{value}</p>
-        </div>
-        <div className={`rounded-xl p-3 ${tone}`}><Icon className="h-6 w-6" /></div>
-      </div>
-    </div>
-  );
-}
-
-function MiniStat({ label, value, tone }: { label: string; value: string; tone: 'emerald' | 'blue' | 'purple' }) {
-  const palette = tone === 'emerald' ? 'bg-emerald-100 text-emerald-700' : tone === 'blue' ? 'bg-blue-100 text-blue-700' : 'bg-violet-100 text-violet-700';
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-      <p className="text-xs text-slate-500">{label}</p>
-      <p className={`mt-2 inline-flex rounded-full px-2.5 py-1 text-sm font-bold ${palette}`}>{value}</p>
-    </div>
-  );
-}
-
-function SettingCard({ label, value, icon: Icon }: { label: string; value: string; icon: any }) {
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-      <div className="flex items-center gap-3">
-        <div className="rounded-xl bg-white p-2 text-primary-600 shadow-sm"><Icon className="h-5 w-5" /></div>
-        <div>
-          <p className="text-sm text-slate-500">{label}</p>
-          <p className="mt-1 font-bold text-slate-800">{value}</p>
-        </div>
-      </div>
-    </div>
   );
 }
