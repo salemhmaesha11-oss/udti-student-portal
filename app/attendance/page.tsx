@@ -113,19 +113,49 @@ const normalizeText = (value: unknown) => {
 const normalizeSupervisorDegree = (value: unknown) => {
   const text = normalizeText(value).replace(/\s+/g, '').toLowerCase();
   const compact = text.replace(/الدرجة|درجة|درجه/g, '');
+  const normalized = compact.replace(/[\-_]/g, '');
 
-  if (['1', '١', 'one', 'first', 'اولى', 'الأولى', '1st'].some((item) => compact.includes(item))) return '1';
-  if (['2', '٢', 'two', 'second', 'ثانية', 'الثانية', '2nd'].some((item) => compact.includes(item))) return '2';
-  if (['3', '٣', 'three', 'third', 'ثالثة', 'الثالثة', '3rd'].some((item) => compact.includes(item))) return '3';
+  if (['1', '١', 'one', 'first', 'اولى', 'الأولى', '1st', 'moderator', 'مودرييتور', 'monitor', 'مراقب'].some((item) => normalized.includes(item))) return '1';
+  if (['2', '٢', 'two', 'second', 'ثانية', 'الثانية', '2nd', 'supervisor', 'super', 'سوبر', 'سوبرفايزور', 'supervisor2', 'level2'].some((item) => normalized.includes(item))) return '2';
+  if (['3', '٣', 'three', 'third', 'ثالثة', 'الثالثة', '3rd', 'fayzor', 'fayzur', 'فايزور', 'faizur', 'supervisor3', 'level3'].some((item) => normalized.includes(item))) return '3';
 
-  return compact || text;
+  return normalized || text;
+};
+
+const resolveSupervisorDegreeFromRow = (row: Record<string, unknown>) => {
+  const directCandidates = [
+    row['الدرجة'],
+    row.degree,
+    row['degree'],
+    row['درجه'],
+    row['rank'],
+    row['role'],
+    row['level'],
+  ];
+
+  for (const candidate of directCandidates) {
+    const normalized = normalizeSupervisorDegree(candidate);
+    if (['1', '2', '3'].includes(normalized)) return normalized;
+  }
+
+  for (const [key, value] of Object.entries(row)) {
+    const lowerKey = String(key).toLowerCase();
+    if (!/(درجة|degree|rank|level|role)/i.test(lowerKey) && !/(1|2|3|اولى|ثانية|ثالثة|moderator|supervisor|فايزور|سوبر|مراقب)/i.test(String(value ?? ''))) {
+      continue;
+    }
+
+    const parsed = normalizeSupervisorDegree(value);
+    if (['1', '2', '3'].includes(parsed)) return parsed;
+  }
+
+  return '3';
 };
 
 const getSupervisorDegreeLabel = (degree: string) => {
   const normalized = normalizeSupervisorDegree(degree);
-  if (normalized === '1') return 'مودرييتور';
-  if (normalized === '2') return 'سوبر فيزور';
-  if (normalized === '3') return 'فايزور';
+  if (normalized === '1' || ['moderator', 'مودرييتور', 'monitor', 'مراقب'].includes(normalizeText(degree).replace(/\s+/g, '').toLowerCase())) return 'مودرييتور';
+  if (normalized === '2' || ['supervisor', 'super', 'سوبر', 'سوبرفايزور'].includes(normalizeText(degree).replace(/\s+/g, '').toLowerCase())) return 'سوبر فيزور';
+  if (normalized === '3' || ['fayzor', 'fayzur', 'فايزور', 'faizur'].includes(normalizeText(degree).replace(/\s+/g, '').toLowerCase())) return 'فايزور';
   return 'مشرف';
 };
 
@@ -134,13 +164,19 @@ const normalizeSupervisorValue = (value: unknown) => {
 };
 
 const getSupervisorDegree = (row: Record<string, unknown>) => {
-  const value = row['الدرجة'] ?? row.degree ?? row['degree'] ?? row['درجه'] ?? row['rank'] ?? '';
-  return normalizeSupervisorDegree(value);
+  return resolveSupervisorDegreeFromRow(row);
 };
 
 const getSupervisorFeatures = (degree: string): SupervisorFeature[] => {
-  if (degree === '1') return ['admin', 'attendance', 'supervisors', 'logs', 'students'];
-  if (['2', '3'].includes(degree)) return ['attendance'];
+  const normalizedDegree = normalizeSupervisorDegree(degree);
+
+  if (normalizedDegree === '1') return ['admin', 'attendance', 'supervisors', 'logs', 'students'];
+  if (['2', '3'].includes(normalizedDegree)) return ['attendance'];
+
+  const lowerDegree = normalizeText(degree).replace(/\s+/g, '').toLowerCase();
+  if (['moderator', 'مودرييتور', 'monitor', 'مراقب', 'المودرييتور'].includes(lowerDegree)) return ['admin', 'attendance', 'supervisors', 'logs', 'students'];
+  if (['supervisor', 'سوبر', 'سوبرفايزور', 'super', 'supervisor2'].includes(lowerDegree)) return ['attendance'];
+
   return [];
 };
 
@@ -664,8 +700,9 @@ const findSupervisorLogin = async (username: string, password: string) => {
 
     const userValue = normalizeSupervisorValue(rawUsername);
     const passwordValue = normalizeSupervisorValue(rawPassword);
-    const degreeValue = normalizeSupervisorDegree(rawDegree);
-    const isAllowedDegree = ['1', '2', '3'].includes(degreeValue);
+    const degreeValue = getSupervisorDegree(row);
+    const isAllowedDegree = ['1', '2', '3'].includes(degreeValue)
+      || ['moderator', 'مودرييتور', 'monitor', 'مراقب', 'supervisor', 'سوبر', 'فايزور', 'faizur', 'fayzor'].includes(normalizeText(rawDegree).replace(/\s+/g, '').toLowerCase());
 
     if (userValue !== normalizedInputUser) {
       continue;
