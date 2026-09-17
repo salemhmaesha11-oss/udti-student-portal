@@ -166,6 +166,7 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<TabKey>('grades');
   const [notice, setNotice] = useState('يرجى تسجيل الدخول لعرض نتائجك');
   const [loginData, setLoginData] = useState({ studentId: '', password: '' });
+  const [showPassword, setShowPassword] = useState(false);
   const [loggedStudent, setLoggedStudent] = useState<StudentRow | null>(null);
   const [grades, setGrades] = useState<GradeEntry[]>([]);
   const [warnings, setWarnings] = useState<Record<string, unknown>[]>([]);
@@ -280,14 +281,20 @@ export default function Home() {
 
             <div className="form-group password-container">
               <input
-                type="password"
+                type={showPassword ? 'text' : 'password'}
                 value={loginData.password}
                 onChange={(event) => setLoginData({ ...loginData, password: event.target.value })}
                 placeholder="كلمة السر"
                 required
               />
-              <button type="button" className="toggle-password" aria-label="إظهار كلمة السر">
-                إظهار
+              <button
+                type="button"
+                className="toggle-password"
+                aria-label={showPassword ? 'إخفاء كلمة السر' : 'إظهار كلمة السر'}
+                aria-pressed={showPassword}
+                onClick={() => setShowPassword((current) => !current)}
+              >
+                {showPassword ? 'إخفاء' : 'إظهار'}
               </button>
             </div>
 

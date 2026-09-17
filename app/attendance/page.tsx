@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 
 type StudentRow = {
@@ -15,6 +15,7 @@ type StudentRow = {
 };
 
 type AttendanceStatus = 'pending' | 'present' | 'absent';
+type SupervisorFeature = 'attendance';
 
 type AttendanceEntry = {
   id: string;
@@ -33,6 +34,14 @@ type PendingAttendanceJob = {
   queuedAt: string;
 };
 
+type RecentAttendanceSession = {
+  id: string;
+  course: string;
+  classValue: string;
+  supervisor: string;
+  startedAt: string;
+};
+
 type SupervisorRow = {
   'اسم المستخدم'?: string;
   username?: string;
@@ -46,6 +55,7 @@ const tableCandidates = {
   students: ['students'],
   attendance: ['الحضور'],
   warnings: ['الإنذارات'],
+  sessions: ['جلسات الحضور'],
 };
 
 const courseOptions = [
@@ -62,6 +72,8 @@ const classOptions = ['أ', 'ب', 'ج', 'د'];
 const yearOptions = ['أولى', 'ثانية'];
 const pendingAttendanceStorageKey = 'udti-pending-attendance-jobs';
 const studentCacheStorageKey = 'udti-attendance-student-cache';
+const localSessionLockKey = 'udti-active-attendance-session';
+const recentSessionWindowMs = 60 * 60 * 1000;
 
 const normalizeText = (value: unknown) => {
   if (value === null || value === undefined || value === '') return 'غير متوفر';
@@ -78,6 +90,16 @@ const normalizeSupervisorDegree = (value: unknown) => {
 
 const normalizeSupervisorValue = (value: unknown) => {
   return normalizeText(value).replace(/\s+/g, '').toLowerCase();
+};
+
+const getSupervisorDegree = (row: Record<string, unknown>) => {
+  const value = row['الدرجة'] ?? row.degree ?? row['degree'] ?? row['درجه'] ?? row['rank'] ?? '';
+  return normalizeSupervisorDegree(value);
+};
+
+const getSupervisorFeatures = (degree: string): SupervisorFeature[] => {
+  if (['1', '2', '3'].includes(degree)) return ['attendance'];
+  return [];
 };
 
 const getSupervisorCredentials = (row: Record<string, unknown>) => {
@@ -174,6 +196,99 @@ const writeCachedStudents = (classValue: string, year: string, students: Student
   window.localStorage.setItem(getStudentCacheKey(classValue, year), JSON.stringify(students));
 };
 
+const getSessionKey = (course: string, classValue: string) => `${course.trim()}::${classValue.trim()}`;
+
+const readLocalSessionLock = () => {
+  if (typeof window === 'undefined') return null;
+
+  try {
+    const stored = window.localStorage.getItem(localSessionLockKey);
+    return stored ? JSON.parse(stored) as RecentAttendanceSession : null;
+  } catch {
+    return null;
+  }
+};
+
+const writeLocalSessionLock = (session: RecentAttendanceSession) => {
+  if (typeof window !== 'undefined') window.localStorage.setItem(localSessionLockKey, JSON.stringify(session));
+};
+
+const clearLocalSessionLock = (sessionId: string) => {
+  const current = readLocalSessionLock();
+  if (current?.id === sessionId && typeof window !== 'undefined') window.localStorage.removeItem(localSessionLockKey);
+};
+
+const normalizeSessionRow = (row: Record<string, unknown>): RecentAttendanceSession | null => {
+  const id = String(row['session_id'] ?? row['معرف الجلسة'] ?? row['id'] ?? '').trim();
+  const course = String(row['المادة'] ?? row['course'] ?? '').trim();
+  const classValue = String(row['الفئة'] ?? row['class'] ?? '').trim();
+  const supervisor = String(row['المشرف'] ?? row['supervisor'] ?? '').trim();
+  const startedAt = String(row['بدأت في'] ?? row['started_at'] ?? row['التاريخ'] ?? '').trim();
+  if (!id || !course || !classValue || !startedAt) return null;
+  return { id, course, classValue, supervisor, startedAt };
+};
+
+const loadRecentAttendanceSessions = async () => {
+  const cutoff = Date.now() - recentSessionWindowMs;
+  const { data, error } = await supabase.from(tableCandidates.sessions[0]).select('*');
+  if (error) {
+    const message = String(error.message || '').toLowerCase();
+    if (message.includes('does not exist') || message.includes('relation') || message.includes('not found')) return [];
+    throw error;
+  }
+
+  return (Array.isArray(data) ? data as Record<string, unknown>[] : [])
+    .map(normalizeSessionRow)
+    .filter((session): session is RecentAttendanceSession => Boolean(session))
+    .filter((session) => Date.parse(session.startedAt) >= cutoff)
+    .sort((left, right) => Date.parse(right.startedAt) - Date.parse(left.startedAt));
+};
+
+const closeExpiredAttendanceSessions = async () => {
+  const cutoff = new Date(Date.now() - recentSessionWindowMs).toISOString();
+  await supabase
+    .from(tableCandidates.sessions[0])
+    .update({ الحالة: 'منتهية', ended_at: new Date().toISOString() })
+    .eq('الحالة', 'نشطة')
+    .lt('started_at', cutoff);
+};
+
+const createAttendanceSession = async (course: string, classValue: string, supervisor: string) => {
+  const session: RecentAttendanceSession = {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+    course,
+    classValue,
+    supervisor: supervisor || 'مشرف غير محدد',
+    startedAt: new Date().toISOString(),
+  };
+
+  await closeExpiredAttendanceSessions();
+
+  const { error } = await supabase.from(tableCandidates.sessions[0]).insert([{
+    session_id: session.id,
+    session_key: getSessionKey(session.course, session.classValue),
+    المادة: session.course,
+    الفئة: session.classValue,
+    المشرف: session.supervisor,
+    started_at: session.startedAt,
+    الحالة: 'نشطة',
+  }]);
+
+  if (error) return { session: null, error };
+  writeLocalSessionLock(session);
+  return { session, error: null };
+};
+
+const closeAttendanceSession = async (sessionId: string) => {
+  const { error } = await supabase
+    .from(tableCandidates.sessions[0])
+    .update({ الحالة: 'منتهية', ended_at: new Date().toISOString() })
+    .eq('session_id', sessionId);
+
+  clearLocalSessionLock(sessionId);
+  return !error;
+};
+
 const stripAutoGeneratedWarningIds = (payload: Record<string, unknown>) => {
   const sanitized = { ...payload };
   ['warnig_id', 'warning_id', 'warningId', 'warnigId', 'id'].forEach((key) => {
@@ -216,8 +331,6 @@ const findSupervisorLogin = async (username: string, password: string) => {
         match: false,
         reason: 'password',
         row,
-        expectedPassword: rawPassword,
-        enteredPassword: password,
         tableName,
       };
     }
@@ -432,47 +545,11 @@ export default function AttendancePage() {
   const [supervisorLoggedIn, setSupervisorLoggedIn] = useState(false);
   const [supervisorUsername, setSupervisorUsername] = useState('');
   const [supervisorPassword, setSupervisorPassword] = useState('');
-  const [supervisorNames, setSupervisorNames] = useState<string[]>([]);
-  const [supervisorLoadStatus, setSupervisorLoadStatus] = useState('');
-
-  const loadSupervisorNames = async () => {
-    const candidateTables = ['المشرفين', 'supervisors', 'Supervisor', 'supervisor'];
-
-    for (const tableName of candidateTables) {
-      const { data, error } = await supabase.from(tableName).select('*').limit(50);
-
-      if (error) {
-        continue;
-      }
-
-      const rows = Array.isArray(data) ? (data as Record<string, unknown>[]) : [];
-      const names = rows
-        .map((row) => {
-          const values = Object.values(row)
-            .filter((item) => item !== null && item !== undefined && String(item).trim() !== '')
-            .map((item) => String(item).trim());
-          return values[0] ?? '';
-        })
-        .filter((name) => name && name !== '');
-
-      if (names.length > 0) {
-        setSupervisorNames(names);
-        setSupervisorLoadStatus(`تم جلب ${names.length} اسم من جدول ${tableName}`);
-        return;
-      }
-
-      setSupervisorNames([]);
-      setSupervisorLoadStatus(`تم الاتصال بجدول ${tableName} لكنه لا يحتوي على بيانات`);
-      return;
-    }
-
-    setSupervisorNames([]);
-    setSupervisorLoadStatus('لم يتم العثور على أي جدول باسم المشرفين أو supervisors. تحقق من اسم الجدول في Supabase.');
-  };
-
-  useEffect(() => {
-    loadSupervisorNames();
-  }, []);
+  const [supervisorFeatures, setSupervisorFeatures] = useState<SupervisorFeature[]>([]);
+  const [selectedFeature, setSelectedFeature] = useState<SupervisorFeature | null>(null);
+  const [recentSessions, setRecentSessions] = useState<RecentAttendanceSession[]>([]);
+  const [activeSession, setActiveSession] = useState<RecentAttendanceSession | null>(null);
+  const saveInProgressRef = useRef(false);
 
   useEffect(() => {
     const syncPendingAttendance = async () => {
@@ -488,6 +565,18 @@ export default function AttendancePage() {
     return () => window.removeEventListener('online', syncPendingAttendance);
   }, []);
 
+  const refreshRecentSessions = async () => {
+    try {
+      setRecentSessions(await loadRecentAttendanceSessions());
+    } catch (error) {
+      console.error('Recent attendance sessions load failed:', getSupabaseErrorText(error));
+    }
+  };
+
+  useEffect(() => {
+    void refreshRecentSessions();
+  }, []);
+
   const handleSupervisorLogin = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
@@ -501,17 +590,14 @@ export default function AttendancePage() {
 
     setLoading(true);
     try {
-      await loadSupervisorNames();
       const supervisor = await findSupervisorLogin(username, password);
       if (!supervisor || !('match' in supervisor) || supervisor.match !== true) {
         const failedReason = supervisor && 'reason' in supervisor ? supervisor.reason : 'username';
 
-        if (failedReason === 'username') {
-          setNotice('اسم المستخدم غير موجود في جدول المشرفين');
-        } else if (failedReason === 'password') {
-          setNotice(`كلمة المرور غير صحيحة. كلمة المرور الصحيحة في الجدول هي: ${String((supervisor as any)?.expectedPassword ?? '')}`);
+        if (failedReason === 'username' || failedReason === 'password') {
+          setNotice('اسم المستخدم أو كلمة المرور غير صحيحة');
         } else if (failedReason === 'degree') {
-          setNotice(`الدرجة غير مسموحة. الدرجة في الجدول هي: ${String((supervisor as any)?.expectedDegree ?? '')} - المسموح فقط 1 أو 2 أو 3`);
+          setNotice('لا توجد صلاحيات مفعلة لهذا الحساب');
         } else {
           setNotice('اسم المستخدم أو كلمة المرور غير صحيحة أو الدرجة غير مسموحة');
         }
@@ -521,9 +607,15 @@ export default function AttendancePage() {
       }
 
       const row = supervisor.row as Record<string, unknown>;
-      const displayName = String(row[Object.keys(row)[0]] ?? 'المشرف');
+      const features = getSupervisorFeatures(getSupervisorDegree(row));
+      if (!features.length) {
+        setNotice('تم التحقق من الحساب، لكن لا توجد وظائف متاحة لهذه الدرجة');
+        return;
+      }
       setSupervisorLoggedIn(true);
-      setNotice(`مرحباً ${displayName} - تم تسجيل دخول المشرف بنجاح`);
+      setSupervisorFeatures(features);
+      setSelectedFeature(null);
+      setNotice('تم تسجيل الدخول بأمان. اختر الوظيفة المطلوبة للمتابعة.');
     } catch (error) {
       const message = getSupabaseErrorText(error);
       console.error('Supervisor auth error:', message);
@@ -543,13 +635,44 @@ export default function AttendancePage() {
   }, [attendanceData]);
 
   const startSession = async () => {
+    if (loading || sessionActive) return;
     if (!selectedCourse || !selectedClass) {
       setNotice('يرجى اختيار المادة والفئة أولاً');
       return;
     }
 
     setLoading(true);
+    let openedSessionId: string | null = null;
     try {
+      const sessionKey = getSessionKey(selectedCourse, selectedClass);
+      const localLock = readLocalSessionLock();
+      if (localLock && getSessionKey(localLock.course, localLock.classValue) === sessionKey
+        && Date.parse(localLock.startedAt) >= Date.now() - recentSessionWindowMs) {
+        setNotice(`هذه الجلسة مفتوحة حالياً للمادة ${localLock.course} والفئة ${localLock.classValue} بواسطة ${localLock.supervisor}.`);
+        return;
+      }
+
+      const currentSessions = await loadRecentAttendanceSessions();
+      const duplicateSession = currentSessions.find((session) => getSessionKey(session.course, session.classValue) === sessionKey);
+      if (duplicateSession) {
+        setRecentSessions(currentSessions);
+        setNotice(`لا يمكن فتح جلسة جديدة. توجد جلسة مفتوحة لنفس المادة والفئة بواسطة ${duplicateSession.supervisor}.`);
+        return;
+      }
+
+      const created = await createAttendanceSession(selectedCourse, selectedClass, supervisorUsername);
+      if (created.error || !created.session) {
+        const message = getSupabaseErrorText(created.error);
+        const lowerMessage = message.toLowerCase();
+        setNotice(lowerMessage.includes('does not exist') || lowerMessage.includes('relation')
+          ? 'يجب إنشاء جدول جلسات الحضور في Supabase أولاً لمنع فتح جلسات متزامنة.'
+          : lowerMessage.includes('duplicate') || lowerMessage.includes('unique') || lowerMessage.includes('23505')
+            ? 'لا يمكن فتح الجلسة: يوجد مشرف آخر يسجل الحضور للمادة والفئة نفسها حالياً.'
+          : `تعذر فتح جلسة الحضور: ${message}`);
+        return;
+      }
+      openedSessionId = created.session.id;
+
       let rows: StudentRow[];
       try {
         rows = await fetchStudentsByClass(selectedClass, selectedYear);
@@ -561,8 +684,9 @@ export default function AttendancePage() {
       }
 
       if (!rows.length) {
+        await closeAttendanceSession(created.session.id);
+        setActiveSession(null);
         setNotice('لا يوجد طلاب مسجلون في هذه الفئة والسنة المحددة');
-        setLoading(false);
         return;
       }
 
@@ -582,8 +706,11 @@ export default function AttendancePage() {
       setStudents(rows);
       setAttendanceData(map);
       setSessionActive(true);
+      setActiveSession(created.session);
+      setRecentSessions([created.session, ...currentSessions]);
       setNotice(`تم بدء جلسة الحضور للفئة ${selectedClass} في مادة ${selectedCourse}`);
     } catch (error) {
+      if (openedSessionId) await closeAttendanceSession(openedSessionId);
       const message = getSupabaseErrorText(error);
       console.error('Attendance fetch failed:', message);
       setNotice(`حدث خطأ أثناء جلب الطلاب من قاعدة البيانات: ${message}`);
@@ -617,13 +744,17 @@ export default function AttendancePage() {
   };
 
   const resetSession = () => {
+    if (activeSession) void closeAttendanceSession(activeSession.id);
     setAttendanceData({});
     setStudents([]);
     setSessionActive(false);
+    setActiveSession(null);
     setNotice('تم إلغاء الجلسة بنجاح');
   };
 
   const saveSession = async () => {
+    if (saveInProgressRef.current || loading) return;
+    saveInProgressRef.current = true;
     const attendanceKeys = Object.keys(attendanceData);
 
     console.log('[attendance][saveSession] begin save', {
@@ -707,14 +838,18 @@ export default function AttendancePage() {
         ? `تم حفظ ${savedRecords} سجل و${savedWarnings} إنذار، وتعذر حفظ ${failedJobs.length} عملية. ستتم إعادة المحاولة تلقائياً.`
         : `تم حفظ البيانات بنجاح: ${savedRecords} سجل حضور و ${savedWarnings} إنذار`);
       if (!failedJobs.length) {
+        if (activeSession) await closeAttendanceSession(activeSession.id);
+        setActiveSession(null);
         setSessionActive(false);
         setStudents([]);
         setAttendanceData({});
+        await refreshRecentSessions();
       }
     } catch (error) {
       console.error('[attendance][saveSession] fatal save error:', error);
       setNotice('حدث خطأ أثناء حفظ بيانات الحضور');
     } finally {
+      saveInProgressRef.current = false;
       setLoading(false);
     }
   };
@@ -732,9 +867,12 @@ export default function AttendancePage() {
               type="button"
               className="back-link"
               onClick={() => {
+                if (activeSession) void closeAttendanceSession(activeSession.id);
                 setSupervisorLoggedIn(false);
                 setSupervisorUsername('');
                 setSupervisorPassword('');
+                setSupervisorFeatures([]);
+                setSelectedFeature(null);
                 setNotice('تم تسجيل خروج المشرف');
               }}
               style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}
@@ -756,6 +894,7 @@ export default function AttendancePage() {
                 <input
                   id="supervisor-user"
                   type="text"
+                  autoComplete="username"
                   value={supervisorUsername}
                   onChange={(event) => setSupervisorUsername(event.target.value)}
                   placeholder="أدخل اسم المستخدم"
@@ -768,6 +907,7 @@ export default function AttendancePage() {
                 <input
                   id="supervisor-password"
                   type="password"
+                  autoComplete="current-password"
                   value={supervisorPassword}
                   onChange={(event) => setSupervisorPassword(event.target.value)}
                   placeholder="أدخل كلمة المرور"
@@ -780,11 +920,6 @@ export default function AttendancePage() {
               </button>
             </form>
 
-            {supervisorLoadStatus && (
-              <div className="notice-box" style={{ marginTop: 16, color: '#374151', fontSize: 14 }}>
-                {supervisorLoadStatus}
-              </div>
-            )}
           </section>
         )}
 
@@ -792,7 +927,37 @@ export default function AttendancePage() {
 
         {!supervisorLoggedIn && <div className="loading-box">يجب تسجيل دخول المشرف قبل استخدام نظام الحضور والغياب</div>}
 
-        {supervisorLoggedIn && (
+        {supervisorLoggedIn && !selectedFeature && (
+          <section className="supervisor-feature-panel">
+            <div className="feature-panel-heading">
+              <span className="feature-panel-kicker">مساحة المشرف</span>
+              <h1>اختر الوظيفة المطلوبة</h1>
+              <p>الوظائف الظاهرة هنا تعتمد على صلاحيات حسابك.</p>
+            </div>
+
+            <div className="supervisor-feature-grid">
+              {supervisorFeatures.includes('attendance') && (
+                <button
+                  type="button"
+                  className="supervisor-feature-card"
+                  onClick={() => {
+                    setSelectedFeature('attendance');
+                    setNotice('تم فتح وظيفة تسجيل الحضور والغياب.');
+                  }}
+                >
+                  <span className="feature-icon" aria-hidden="true">✓</span>
+                  <span>
+                    <strong>الحضور والغياب</strong>
+                    <small>إدارة جلسات الحضور وتسجيل حالة الطلاب</small>
+                  </span>
+                  <span className="feature-arrow" aria-hidden="true">←</span>
+                </button>
+              )}
+            </div>
+          </section>
+        )}
+
+        {supervisorLoggedIn && selectedFeature === 'attendance' && (
           <>
             <header className="attendance-header">
           <div className="attendance-header-inner">
@@ -810,7 +975,7 @@ export default function AttendancePage() {
 
         <div className="attendance-title">نظام الحضور والغياب الإلكتروني</div>
 
-        {supervisorLoggedIn && !sessionActive && (
+        {supervisorLoggedIn && selectedFeature === 'attendance' && !sessionActive && (
           <section className="panel">
             <div className="panel-header">
               <span>إعدادات الجلسة</span>
@@ -848,6 +1013,21 @@ export default function AttendancePage() {
             <button className="action-button primary" type="button" onClick={startSession} disabled={loading}>
               {loading ? 'جاري تحميل البيانات...' : 'بدء جلسة الحضور'}
             </button>
+
+            <div className="session-info" style={{ marginTop: 20 }}>
+              <strong>الجلسات خلال آخر ساعة</strong>
+              {recentSessions.length === 0 ? (
+                <div style={{ marginTop: 8 }}>لا توجد جلسات مسجلة خلال آخر ساعة.</div>
+              ) : (
+                <div style={{ marginTop: 8 }}>
+                  {recentSessions.map((session) => (
+                    <div key={session.id} style={{ marginTop: 6 }}>
+                      {session.course} - الفئة {session.classValue} - {session.supervisor} - {new Date(session.startedAt).toLocaleTimeString('ar-EG')}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </section>
         )}
 
@@ -920,7 +1100,7 @@ export default function AttendancePage() {
               <button type="button" className="action-button warning" onClick={resetSession}>
                 إعادة تعيين
               </button>
-              <button type="button" className="action-button primary" onClick={saveSession} disabled={loading}>
+              <button type="button" className="action-button primary" onClick={saveSession} disabled={loading || saveInProgressRef.current}>
                 {loading ? 'جاري الحفظ...' : 'إنهاء الجلسة وحفظ البيانات'}
               </button>
             </div>
