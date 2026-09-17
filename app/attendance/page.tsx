@@ -189,38 +189,6 @@ const getSupervisorFeatures = (degree: string): SupervisorFeature[] => {
   return [];
 };
 
-const refreshSupervisorSessionFromDatabase = async (usernameOverride?: string) => {
-  const activeUsername = (usernameOverride ?? supervisorUsername).trim();
-  if (!activeUsername || typeof window === 'undefined') return;
-
-  try {
-    const { data, error } = await supabase.from('المشرفين').select('*');
-    if (error) throw error;
-
-    const rows = Array.isArray(data) ? (data as Record<string, unknown>[]) : [];
-    const match = rows.find((row) => normalizeSupervisorValue(row['اسم المستخدم'] ?? row.username ?? row['username'] ?? row['اسم_المستخدم'] ?? row['user_name']) === normalizeSupervisorValue(activeUsername));
-    if (!match) return;
-
-    const liveDegree = getSupervisorDegree(match) || '3';
-    const liveFeatures = getSupervisorFeatures(liveDegree);
-    setSupervisorDegree(liveDegree);
-    setSupervisorFeatures(liveFeatures);
-
-    const stored = JSON.parse(window.localStorage.getItem(supervisorSessionStorageKey) || '{}') as Partial<StoredSupervisorSession>;
-    const allowedSelectedFeature = stored.selectedFeature && liveFeatures.includes(stored.selectedFeature) ? stored.selectedFeature : null;
-    setSelectedFeature(allowedSelectedFeature);
-
-    window.localStorage.setItem(supervisorSessionStorageKey, JSON.stringify({
-      username: activeUsername,
-      degree: liveDegree,
-      features: liveFeatures,
-      selectedFeature: allowedSelectedFeature,
-    } satisfies StoredSupervisorSession));
-  } catch {
-    // Ignore background sync failures; the session remains usable and refreshes on next login.
-  }
-};
-
 const getAdminRecordValue = (row: AdminRecord, keys: string[]) => {
   for (const key of keys) {
     if (row[key] !== undefined && row[key] !== null && row[key] !== '') return row[key];
@@ -1023,6 +991,38 @@ export default function AttendancePage() {
     'نوع التسجيل': 'جديد',
     'ملاحظة': '',
   });
+
+  const refreshSupervisorSessionFromDatabase = async (usernameOverride?: string, currentSupervisorUsername?: string) => {
+    const activeUsername = (usernameOverride ?? currentSupervisorUsername ?? supervisorUsername).trim();
+    if (!activeUsername || typeof window === 'undefined') return;
+
+    try {
+      const { data, error } = await supabase.from('المشرفين').select('*');
+      if (error) throw error;
+
+      const rows = Array.isArray(data) ? (data as Record<string, unknown>[]) : [];
+      const match = rows.find((row) => normalizeSupervisorValue(row['اسم المستخدم'] ?? row.username ?? row['username'] ?? row['اسم_المستخدم'] ?? row['user_name']) === normalizeSupervisorValue(activeUsername));
+      if (!match) return;
+
+      const liveDegree = getSupervisorDegree(match) || '3';
+      const liveFeatures = getSupervisorFeatures(liveDegree);
+      setSupervisorDegree(liveDegree);
+      setSupervisorFeatures(liveFeatures);
+
+      const stored = JSON.parse(window.localStorage.getItem(supervisorSessionStorageKey) || '{}') as Partial<StoredSupervisorSession>;
+      const allowedSelectedFeature = stored.selectedFeature && liveFeatures.includes(stored.selectedFeature) ? stored.selectedFeature : null;
+      setSelectedFeature(allowedSelectedFeature);
+
+      window.localStorage.setItem(supervisorSessionStorageKey, JSON.stringify({
+        username: activeUsername,
+        degree: liveDegree,
+        features: liveFeatures,
+        selectedFeature: allowedSelectedFeature,
+      } satisfies StoredSupervisorSession));
+    } catch {
+      // Ignore background sync failures; the session remains usable and refreshes on next login.
+    }
+  };
 
   const syncCurrentSupervisorSession = (nextDegree: string, nextUsername: string) => {
     const nextFeatures = getSupervisorFeatures(nextDegree);
