@@ -162,8 +162,8 @@ export const recordWarning = async (student: Partial<StudentRow>, course: string
     'الرقم الجامعي': studentId,
     'اسم الطالب': normalizeText(getRecordValue(student as Record<string, unknown>, fieldAliases.studentName)),
     'نوع الإنذار': 'إنذار غياب',
-    'السبب': `غياب غير مبرر في مادة ${course || 'غير محددة'}`,
-    'التفاصيل': `تجاوز نسبة الغياب المسموحة / غياب بدون عذر مقبول في مادة ${course || 'غير محددة'}`,
+    'السبب': `غياب في مادة ${course || 'غير محددة'}`,
+    'التفاصيل': '',
     'تم الإرسال': true,
   });
 

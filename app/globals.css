@@ -1232,6 +1232,195 @@ tr:nth-child(even) td {
   font-size: 1.3rem;
 }
 
+.admin-dashboard-panel {
+  margin: 22px auto 0;
+  padding: clamp(18px, 4vw, 32px);
+  border-radius: 20px;
+  background: #f9fbfa;
+  box-shadow: 0 20px 50px rgba(47, 63, 58, 0.12);
+}
+
+.admin-dashboard-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.admin-dashboard-heading h1,
+.admin-student-detail h2,
+.admin-table-section h2 {
+  color: #294e47;
+}
+
+.admin-dashboard-heading p {
+  margin-top: 6px;
+  color: #687872;
+}
+
+.admin-filter-grid {
+  display: grid;
+  grid-template-columns: 2fr repeat(3, 1fr);
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid #dce9e3;
+  border-radius: 16px;
+  background: #fff;
+}
+
+.admin-filter-grid .field-group {
+  margin-bottom: 0;
+}
+
+.admin-filter-grid input,
+.admin-filter-grid select,
+.admin-student-picker select {
+  width: 100%;
+  min-height: 46px;
+  border: 1px solid #d6e3dd;
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: #fbfdfc;
+  color: #294e47;
+}
+
+.admin-view-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 18px 0 12px;
+}
+
+.admin-view-tabs button,
+.admin-record-actions button,
+.admin-record-item > button {
+  min-height: 38px;
+  padding: 8px 12px;
+  border: 1px solid #cfe0d8;
+  border-radius: 9px;
+  background: #fff;
+  color: #38695d;
+  font-family: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+}
+
+.admin-view-tabs button.active,
+.admin-view-tabs button:hover,
+.admin-record-actions button:hover,
+.admin-record-item > button:hover {
+  background: #e8f2ed;
+  box-shadow: 0 5px 12px rgba(55, 106, 92, 0.1);
+  transform: translateY(-1px);
+}
+
+.admin-stats-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 22px;
+  margin: 12px 0;
+  color: #62736c;
+}
+
+.admin-stats-row strong {
+  color: #315d54;
+}
+
+.admin-student-picker {
+  display: grid;
+  gap: 8px;
+  margin: 18px 0;
+}
+
+.admin-student-picker label {
+  color: #315d54;
+  font-weight: 800;
+}
+
+.admin-student-detail,
+.admin-table-section {
+  margin-top: 18px;
+  padding: 18px;
+  border: 1px solid #dce9e3;
+  border-radius: 16px;
+  background: #fff;
+}
+
+.admin-detail-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 14px;
+}
+
+.admin-detail-columns h3 {
+  margin-bottom: 10px;
+  color: #477267;
+}
+
+.admin-record-list {
+  display: grid;
+  gap: 9px;
+  margin-top: 12px;
+}
+
+.admin-record-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  padding: 12px;
+  border: 1px solid #e0ebe6;
+  border-radius: 12px;
+  background: #fbfdfc;
+  color: #64746e;
+  font-size: 0.88rem;
+}
+
+.admin-record-item strong {
+  color: #294e47;
+}
+
+.admin-record-item span {
+  line-height: 1.6;
+}
+
+.admin-record-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  width: 100%;
+}
+
+.admin-record-actions button.danger {
+  border-color: #efcaca;
+  background: #fff4f4;
+  color: #ad4343;
+}
+
+.warning-record {
+  border-color: #eadfca;
+  background: #fffdf8;
+}
+
+@media (max-width: 760px) {
+  .admin-dashboard-heading,
+  .admin-detail-columns {
+    grid-template-columns: 1fr;
+    display: grid;
+  }
+
+  .admin-filter-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-dashboard-heading .action-button {
+    width: 100%;
+  }
+}
+
 .attendance-page {
   width: min(1200px, 100%);
   margin: 0 auto;
