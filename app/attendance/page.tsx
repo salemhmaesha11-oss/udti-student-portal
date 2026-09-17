@@ -1301,6 +1301,13 @@ export default function AttendancePage() {
     return Array.from(options);
   }, [studentDirectory]);
 
+  useEffect(() => {
+    if (!studentClassFilter && studentClassOptions.length) {
+      const defaultSelection = studentClassOptions.find((option) => option !== 'بدون فئة') ?? studentClassOptions[0];
+      if (defaultSelection) setStudentClassFilter(defaultSelection);
+    }
+  }, [studentClassFilter, studentClassOptions]);
+
   const filteredStudentDirectory = useMemo(() => {
     const normalizedSearch = studentDirectorySearch.trim().toLowerCase();
     return studentDirectory.filter((student) => {

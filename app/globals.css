@@ -1241,6 +1241,7 @@ tr:nth-child(even) td {
 }
 
 .admin-dashboard-panel {
+  width: min(1200px, 100%);
   margin: 22px auto 0;
   padding: clamp(18px, 4vw, 32px);
   border-radius: 20px;
@@ -1250,6 +1251,7 @@ tr:nth-child(even) td {
 
 .admin-dashboard-heading {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
@@ -1501,7 +1503,12 @@ tr:nth-child(even) td {
 }
 
 @media (max-width: 760px) {
-  .admin-dashboard-heading,
+  .admin-dashboard-heading {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
   .admin-detail-columns {
     grid-template-columns: 1fr;
     display: grid;
@@ -1519,11 +1526,15 @@ tr:nth-child(even) td {
 .attendance-page {
   width: min(1200px, 100%);
   margin: 0 auto;
+  padding: 0 8px 24px;
 }
 
 .attendance-topbar {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   justify-content: flex-start;
+  gap: 10px 12px;
   margin-bottom: 16px;
 }
 
