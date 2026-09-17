@@ -179,6 +179,15 @@ export default function Home() {
     { label: 'منتظر', value: '0', tone: 'waiting' },
   ]);
   const [studentStatus, setStudentStatus] = useState<string>('غير متوفر');
+  const [isLoading, setIsLoading] = useState(false);
+  const [capsLockOn, setCapsLockOn] = useState(false);
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
+
+  useEffect(() => {
+    if (!toast) return;
+    const timeout = window.setTimeout(() => setToast(null), 4000);
+    return () => window.clearTimeout(timeout);
+  }, [toast]);
 
   useEffect(() => {
     try {
@@ -240,33 +249,48 @@ export default function Home() {
     const password = loginData.password.trim();
 
     if (!studentId || !password) {
-      setNotice('يرجى إدخال الرقم الجامعي وكلة السر');
+      setNotice('يرجى إدخال الرقم الجامعي وكلمة السر');
+      setToast({ message: 'يرجى إدخال الرقم الجامعي وكلمة السر', type: 'error' });
       return;
     }
 
-    const user = await getStudentById(studentId);
+    setIsLoading(true);
+    setNotice('جاري التحقق من بيانات الدخول...');
 
-    if (!user) {
-      setNotice('الرقم الجامعي غير موجود في قاعدة البيانات');
-      return;
+    try {
+      const user = await getStudentById(studentId);
+
+      if (!user) {
+        setNotice('الرقم الجامعي غير موجود في قاعدة البيانات');
+        setToast({ message: 'الرقم الجامعي غير موجود', type: 'error' });
+        return;
+      }
+
+      const storedPassword = String(getRecordValue(user as Record<string, unknown>, ['كلمة السر', 'password']) ?? '').trim();
+      if (storedPassword !== password) {
+        setNotice('كلمة السر غير صحيحة');
+        setToast({ message: 'كلمة السر غير صحيحة', type: 'error' });
+        return;
+      }
+
+      setLoggedStudent(user as StudentRow);
+      setIsLoggedIn(true);
+      window.localStorage.setItem(studentSessionStorageKey, JSON.stringify(user));
+      writeAuditLog({
+        action: 'student_login',
+        userType: 'student',
+        userId: studentId,
+        username: String(getRecordValue(user as Record<string, unknown>, ['اسم الطالب', 'student_name', 'name']) ?? ''),
+      });
+      const studentName = normalizeText(getRecordValue(user as Record<string, unknown>, ['اسم الطالب', 'student_name', 'name']));
+      setNotice(`تم تسجيل الدخول بنجاح، مرحباً ${studentName}`);
+      setToast({ message: `مرحباً ${studentName}`, type: 'success' });
+    } catch (error) {
+      setNotice('حدث خطأ أثناء تسجيل الدخول');
+      setToast({ message: 'حدث خطأ أثناء تسجيل الدخول', type: 'error' });
+    } finally {
+      setIsLoading(false);
     }
-
-    const storedPassword = String(getRecordValue(user as Record<string, unknown>, ['كلمة السر', 'password']) ?? '').trim();
-    if (storedPassword !== password) {
-      setNotice('كلمة السر غير صحيحة');
-      return;
-    }
-
-    setLoggedStudent(user as StudentRow);
-    setIsLoggedIn(true);
-    window.localStorage.setItem(studentSessionStorageKey, JSON.stringify(user));
-    writeAuditLog({
-      action: 'student_login',
-      userType: 'student',
-      userId: studentId,
-      username: String(getRecordValue(user as Record<string, unknown>, ['اسم الطالب', 'student_name', 'name']) ?? ''),
-    });
-    setNotice(`تم تسجيل الدخول بنجاح، مرحباً ${normalizeText(getRecordValue(user as Record<string, unknown>, ['اسم الطالب', 'student_name', 'name']))}`);
   };
 
   const logout = () => {
@@ -286,6 +310,13 @@ export default function Home() {
   if (!isLoggedIn) {
     return (
       <main className="login-shell" dir="rtl">
+        {toast && (
+          <div className={`toast toast-${toast.type}`} role="status" aria-live="polite">
+            <span className="toast-icon">{toast.type === 'success' ? '✓' : toast.type === 'error' ? '✕' : 'ℹ'}</span>
+            <span>{toast.message}</span>
+          </div>
+        )}
+
         <div className="login-card">
           <div className="institute-header login-institute-header">
             <img
@@ -308,6 +339,7 @@ export default function Home() {
                 placeholder="الرقم الجامعي"
                 inputMode="numeric"
                 required
+                disabled={isLoading}
               />
             </div>
 
@@ -316,8 +348,11 @@ export default function Home() {
                 type={showPassword ? 'text' : 'password'}
                 value={loginData.password}
                 onChange={(event) => setLoginData({ ...loginData, password: event.target.value })}
+                onKeyDown={(event) => setCapsLockOn(event.getModifierState ? event.getModifierState('CapsLock') : false)}
+                onKeyUp={(event) => setCapsLockOn(event.getModifierState ? event.getModifierState('CapsLock') : false)}
                 placeholder="كلمة السر"
                 required
+                disabled={isLoading}
               />
               <button
                 type="button"
@@ -330,14 +365,19 @@ export default function Home() {
               </button>
             </div>
 
-            <button type="submit" className="login-button">عرض</button>
-          </form>
+            {capsLockOn && <div className="caps-warning">⚠️ Caps Lock مفعّل</div>}
 
-          <div style={{ marginTop: 16 }}>
-            <Link href="/attendance/" className="login-button" style={{ display: 'inline-flex', justifyContent: 'center', textDecoration: 'none', width: '100%' }}>
-              لوحة التحكم للمشرفين
-            </Link>
-          </div>
+            <button type="submit" className={`login-button ${isLoading ? 'is-loading' : ''}`} disabled={isLoading}>
+              {isLoading ? (
+                <>
+                  <span className="spinner-inline" />
+                  <span>جاري التحقق...</span>
+                </>
+              ) : (
+                'عرض'
+              )}
+            </button>
+          </form>
 
           <div className="login-help">
             <strong>ملاحظات:</strong>
@@ -345,7 +385,12 @@ export default function Home() {
           </div>
 
           <div className="system-notice">{notice}</div>
+        </div>
 
+        <div className="login-footer">
+          <Link href="/attendance/" className="admin-link">
+            لوحة التحكم للمشرفين
+          </Link>
         </div>
       </main>
     );
