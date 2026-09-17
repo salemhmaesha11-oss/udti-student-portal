@@ -115,10 +115,11 @@ const normalizeSupervisorDegree = (value: unknown) => {
   const compact = text.replace(/الدرجة|درجة|درجه/g, '');
   const normalized = compact.replace(/[\-_]/g, '');
 
-  if (['1', '١', 'one', 'first', 'اولى', 'الأولى', '1st', 'moderator', 'مودرييتور', 'monitor', 'مراقب'].some((item) => normalized.includes(item))) return '1';
-  if (['2', '٢', 'two', 'second', 'ثانية', 'الثانية', '2nd', 'supervisor', 'super', 'سوبر', 'سوبرفايزور', 'supervisor2', 'level2'].some((item) => normalized.includes(item))) return '2';
-  if (['3', '٣', 'three', 'third', 'ثالثة', 'الثالثة', '3rd', 'fayzor', 'fayzur', 'فايزور', 'faizur', 'supervisor3', 'level3'].some((item) => normalized.includes(item))) return '3';
+  if (['1', '١', 'one', 'first', 'اولى', 'الأولى', '1st', 'moderator', 'مودرييتور', 'monitor', 'مراقب', 'المودرييتور'].some((item) => normalized.includes(item))) return '1';
+  if (['2', '٢', 'two', 'second', 'ثانية', 'الثانية', '2nd', 'supervisor', 'super', 'سوبر', 'سوبرفايزور', 'supervisor2', 'level2', 'فايزور', 'fayzor', 'fayzur', 'faizur'].some((item) => normalized.includes(item))) return '2';
+  if (['3', '٣', 'three', 'third', 'ثالثة', 'الثالثة', '3rd', 'level3', 'supervisor3', 'senior', 'قائد', 'رئيس', 'adminlevel'].some((item) => normalized.includes(item))) return '3';
 
+  if (/^\d$/.test(normalized)) return normalized;
   return normalized || text;
 };
 
@@ -169,15 +170,66 @@ const getSupervisorDegree = (row: Record<string, unknown>) => {
 
 const getSupervisorFeatures = (degree: string): SupervisorFeature[] => {
   const normalizedDegree = normalizeSupervisorDegree(degree);
-
-  if (normalizedDegree === '1') return ['admin', 'attendance', 'supervisors', 'logs', 'students'];
-  if (['2', '3'].includes(normalizedDegree)) return ['attendance'];
-
   const lowerDegree = normalizeText(degree).replace(/\s+/g, '').toLowerCase();
-  if (['moderator', 'مودرييتور', 'monitor', 'مراقب', 'المودرييتور'].includes(lowerDegree)) return ['admin', 'attendance', 'supervisors', 'logs', 'students'];
-  if (['supervisor', 'سوبر', 'سوبرفايزور', 'super', 'supervisor2'].includes(lowerDegree)) return ['attendance'];
+
+  if (normalizedDegree === '1' || ['moderator', 'مودرييتور', 'monitor', 'مراقب', 'المودرييتور'].includes(lowerDegree)) {
+    return ['admin', 'attendance', 'supervisors', 'logs', 'students'];
+  }
+
+  if (['2', '3'].includes(normalizedDegree) || ['supervisor', 'سوبر', 'سوبرفايزور', 'super', 'supervisor2', 'fayzor', 'fayzur', 'فايزور', 'faizur'].includes(lowerDegree)) {
+    return ['attendance'];
+  }
 
   return [];
+};
+
+const syncCurrentSupervisorSession = (nextDegree: string, nextUsername = supervisorUsername) => {
+  const nextFeatures = getSupervisorFeatures(nextDegree);
+  setSupervisorDegree(nextDegree);
+  setSupervisorFeatures(nextFeatures);
+  if (nextUsername) {
+    const stored = JSON.parse(window.localStorage.getItem(supervisorSessionStorageKey) || '{}') as Partial<StoredSupervisorSession>;
+    const nextSelectedFeature = stored.selectedFeature && nextFeatures.includes(stored.selectedFeature) ? stored.selectedFeature : null;
+    setSelectedFeature(nextSelectedFeature);
+    window.localStorage.setItem(supervisorSessionStorageKey, JSON.stringify({
+      username: nextUsername,
+      degree: nextDegree,
+      features: nextFeatures,
+      selectedFeature: nextSelectedFeature,
+    } satisfies StoredSupervisorSession));
+  }
+};
+
+const refreshSupervisorSessionFromDatabase = async (usernameOverride?: string) => {
+  const activeUsername = (usernameOverride ?? supervisorUsername).trim();
+  if (!activeUsername || typeof window === 'undefined') return;
+
+  try {
+    const { data, error } = await supabase.from('المشرفين').select('*');
+    if (error) throw error;
+
+    const rows = Array.isArray(data) ? (data as Record<string, unknown>[]) : [];
+    const match = rows.find((row) => normalizeSupervisorValue(row['اسم المستخدم'] ?? row.username ?? row['username'] ?? row['اسم_المستخدم'] ?? row['user_name']) === normalizeSupervisorValue(activeUsername));
+    if (!match) return;
+
+    const liveDegree = getSupervisorDegree(match) || '3';
+    const liveFeatures = getSupervisorFeatures(liveDegree);
+    setSupervisorDegree(liveDegree);
+    setSupervisorFeatures(liveFeatures);
+
+    const stored = JSON.parse(window.localStorage.getItem(supervisorSessionStorageKey) || '{}') as Partial<StoredSupervisorSession>;
+    const allowedSelectedFeature = stored.selectedFeature && liveFeatures.includes(stored.selectedFeature) ? stored.selectedFeature : null;
+    setSelectedFeature(allowedSelectedFeature);
+
+    window.localStorage.setItem(supervisorSessionStorageKey, JSON.stringify({
+      username: activeUsername,
+      degree: liveDegree,
+      features: liveFeatures,
+      selectedFeature: allowedSelectedFeature,
+    } satisfies StoredSupervisorSession));
+  } catch {
+    // Ignore background sync failures; the session remains usable and refreshes on next login.
+  }
 };
 
 const getAdminRecordValue = (row: AdminRecord, keys: string[]) => {
@@ -1434,7 +1486,16 @@ export default function AttendancePage() {
       username: supervisorUsername,
       details: { targetUsername: supervisorForm.username.trim(), targetDegree: supervisorForm.degree },
     });
-    setNotice(result.success ? 'تم حفظ بيانات المشرف.' : `تعذر حفظ المشرف: ${result.error}`);
+
+    if (result.success && supervisorLoggedIn && supervisorUsername.trim() === supervisorForm.username.trim()) {
+      const updatedDegree = normalizeSupervisorDegree(supervisorForm.degree) || supervisorForm.degree || '3';
+      syncCurrentSupervisorSession(updatedDegree, supervisorForm.username.trim());
+      setSelectedFeature((previous) => previous && getSupervisorFeatures(updatedDegree).includes(previous) ? previous : null);
+      setNotice('تم تحديث درجة المشرف وحُدّثت صلاحيات الحساب فوراً.');
+    } else {
+      setNotice(result.success ? 'تم حفظ بيانات المشرف.' : `تعذر حفظ المشرف: ${result.error}`);
+    }
+
     setSupervisorForm({ username: '', password: '', degree: '3' });
     setEditingSupervisorId('');
     await refreshAdminData();
@@ -1452,6 +1513,23 @@ export default function AttendancePage() {
   useEffect(() => {
     void refreshRecentSessions();
   }, []);
+
+  useEffect(() => {
+    if (supervisorLoggedIn && supervisorUsername) {
+      void refreshSupervisorSessionFromDatabase(supervisorUsername);
+    }
+  }, [supervisorLoggedIn, supervisorUsername]);
+
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && supervisorLoggedIn && supervisorUsername) {
+        void refreshSupervisorSessionFromDatabase(supervisorUsername);
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [supervisorLoggedIn, supervisorUsername]);
 
   useEffect(() => {
     if (supervisorLoggedIn && selectedFeature === 'students') {
@@ -1779,7 +1857,10 @@ export default function AttendancePage() {
           <button
             type="button"
             className="inline-flex items-center gap-2 px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-lg font-semibold transition-all cursor-pointer z-50"
-            onClick={() => {
+            onClick={async () => {
+              if (supervisorLoggedIn && supervisorUsername) {
+                await refreshSupervisorSessionFromDatabase(supervisorUsername);
+              }
               if (activeSession) void closeAttendanceSession(activeSession.id);
               setSelectedFeature(null);
               setSessionActive(false);
@@ -1791,7 +1872,6 @@ export default function AttendancePage() {
           >
             ← العودة للوحة التحكم
           </button>
-          <Link href="/" className="back-link">العودة للرئيسية</Link>
           {supervisorLoggedIn && (
             <div
               className="supervisor-identity-badge"
