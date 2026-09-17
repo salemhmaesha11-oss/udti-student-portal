@@ -1343,6 +1343,21 @@ export default function AttendancePage() {
     <main className="attendance-shell" dir="rtl">
       <div className="attendance-page">
         <div className="attendance-topbar">
+          <button
+            type="button"
+            className="inline-flex items-center gap-2 px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-lg font-semibold transition-all cursor-pointer z-50"
+            onClick={() => {
+              if (activeSession) void closeAttendanceSession(activeSession.id);
+              setSelectedFeature(null);
+              setSessionActive(false);
+              setStudents([]);
+              setAttendanceData({});
+              setActiveSession(null);
+              setNotice('تمت العودة إلى صفحة وظائف المشرفين.');
+            }}
+          >
+            ← العودة للوحة التحكم
+          </button>
           <Link href="/" className="back-link">العودة للرئيسية</Link>
           {supervisorLoggedIn && (
             <button

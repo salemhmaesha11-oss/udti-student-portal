@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1000" role="img" aria-labelledby="title desc">
+  <title id="title">Institute Building</title>
+  <desc id="desc">A modern university building illustration with a clean sky.</desc>
+  <defs>
+    <linearGradient id="sky" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0%" stop-color="#dfeae4"/>
+      <stop offset="100%" stop-color="#f5efe2"/>
+    </linearGradient>
+    <linearGradient id="glass" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0%" stop-color="#edf3f2"/>
+      <stop offset="100%" stop-color="#dfe6e0"/>
+    </linearGradient>
+    <linearGradient id="ground" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0%" stop-color="#d7c39a"/>
+      <stop offset="100%" stop-color="#b99d63"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1600" height="1000" fill="url(#sky)"/>
+  <circle cx="1260" cy="150" r="80" fill="#f9e7a5" opacity="0.7"/>
+
+  <rect x="0" y="760" width="1600" height="240" fill="url(#ground)"/>
+  <rect x="200" y="260" width="1200" height="500" rx="18" fill="#dfe5dd"/>
+  <rect x="250" y="310" width="1100" height="420" rx="14" fill="#f5f7f2"/>
+
+  <rect x="350" y="340" width="170" height="320" rx="10" fill="url(#glass)"/>
+  <rect x="545" y="340" width="170" height="320" rx="10" fill="url(#glass)"/>
+  <rect x="740" y="340" width="170" height="320" rx="10" fill="url(#glass)"/>
+  <rect x="935" y="340" width="170" height="320" rx="10" fill="url(#glass)"/>
+  <rect x="1130" y="340" width="170" height="320" rx="10" fill="url(#glass)"/>
+
+  <g fill="#b7c2b7">
+    <rect x="380" y="390" width="110" height="210" rx="4"/>
+    <rect x="575" y="390" width="110" height="210" rx="4"/>
+    <rect x="770" y="390" width="110" height="210" rx="4"/>
+    <rect x="965" y="390" width="110" height="210" rx="4"/>
+    <rect x="1160" y="390" width="110" height="210" rx="4"/>
+  </g>
+
+  <g fill="#7a8c7c">
+    <rect x="420" y="430" width="30" height="150"/>
+    <rect x="615" y="430" width="30" height="150"/>
+    <rect x="810" y="430" width="30" height="150"/>
+    <rect x="1005" y="430" width="30" height="150"/>
+    <rect x="1200" y="430" width="30" height="150"/>
+  </g>
+
+  <rect x="300" y="225" width="1000" height="70" rx="12" fill="#4e6d62"/>
+  <rect x="320" y="210" width="960" height="32" rx="10" fill="#8b9d8d"/>
+  <rect x="620" y="130" width="360" height="110" rx="12" fill="#e5d1a5" opacity="0.85"/>
+  <rect x="670" y="150" width="260" height="60" rx="8" fill="#f4edd8"/>
+  <circle cx="760" cy="182" r="18" fill="#4e6d62"/>
+  <path d="M770 170 L780 182 L770 194 L760 182 Z" fill="#f4edd8"/>
+
+  <g opacity="0.7" fill="#7a8c7c">
+    <rect x="250" y="760" width="120" height="70"/>
+    <rect x="420" y="760" width="140" height="70"/>
+    <rect x="610" y="760" width="170" height="70"/>
+    <rect x="830" y="760" width="150" height="70"/>
+    <rect x="1030" y="760" width="130" height="70"/>
+  </g>
+</svg>

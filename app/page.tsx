@@ -309,15 +309,36 @@ export default function Home() {
 
   if (!isLoggedIn) {
     return (
-      <main className="login-shell" dir="rtl">
+      <main
+        className="login-shell"
+        dir="rtl"
+        style={{
+          backgroundImage: "linear-gradient(rgba(10, 19, 17, 0.42), rgba(10, 19, 17, 0.42)), url('/building.jpg')",
+          backgroundSize: 'cover',
+          backgroundPosition: 'center center',
+          backgroundRepeat: 'no-repeat',
+          position: 'relative',
+        }}
+      >
+        <div
+          aria-hidden="true"
+          style={{
+            position: 'absolute',
+            inset: 0,
+            background: 'rgba(255, 255, 255, 0.06)',
+            backdropFilter: 'blur(0.5px)',
+            zIndex: 0,
+          }}
+        />
+
         {toast && (
-          <div className={`toast toast-${toast.type}`} role="status" aria-live="polite">
+          <div className={`toast toast-${toast.type}`} role="status" aria-live="polite" style={{ zIndex: 5 }}>
             <span className="toast-icon">{toast.type === 'success' ? '✓' : toast.type === 'error' ? '✕' : 'ℹ'}</span>
             <span>{toast.message}</span>
           </div>
         )}
 
-        <div className="login-card">
+        <div className="login-card" style={{ position: 'relative', zIndex: 1 }}>
           <div className="institute-header login-institute-header">
             <img
               className="login-logo"

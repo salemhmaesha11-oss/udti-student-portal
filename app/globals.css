@@ -27,7 +27,7 @@ html {
 
 body {
   margin: 0;
-  font-family: Tahoma, 'Segoe UI', Arial, sans-serif;
+  font-family: var(--font-cairo), Tahoma, 'Segoe UI', Arial, sans-serif;
   background: linear-gradient(135deg, #f5f7fa 0%, #e6e9e0 100%);
   color: var(--text-dark);
   min-height: 100vh;
@@ -37,8 +37,15 @@ body {
 button,
 input,
 textarea,
-select {
-  font-family: inherit;
+select,
+h1,
+h2,
+h3,
+p,
+span,
+div,
+a {
+  font-family: var(--font-cairo), Tahoma, 'Segoe UI', Arial, sans-serif;
 }
 
 .login-shell {
@@ -50,14 +57,15 @@ select {
   gap: 18px;
   padding: 24px 16px 32px;
   background-image:
-    linear-gradient(rgba(16, 30, 26, 0.52), rgba(16, 30, 26, 0.52)),
-    url('https://drive.google.com/uc?export=view&id=1jlBEAbNAtAEi58HxdhLqCQO1izKrELEx');
+    linear-gradient(rgba(15, 32, 29, 0.42), rgba(15, 32, 29, 0.42)),
+    url('/institute-building.svg');
   background-size: cover;
   background-position: center center;
   background-repeat: no-repeat;
+  background-attachment: fixed;
   position: relative;
   overflow: hidden;
-  font-family: Tahoma, 'Segoe UI', Arial, sans-serif;
+  font-family: var(--font-cairo), Tahoma, 'Segoe UI', Arial, sans-serif;
 }
 
 .login-shell::before,
