@@ -211,8 +211,15 @@ export default function Home() {
     try {
       const { error } = await supabase.from('students').update({ telegram_notifications_enabled: enabled }).eq('الرقم الجامعي', studentId);
       if (!error) {
-        setLoggedStudent((previous) => (previous ? { ...previous, telegram_notifications_enabled: enabled, 'telegram_notifications_enabled': enabled } : previous));
-        const nextStudent = { ...(loggedStudent ?? {}), telegram_notifications_enabled: enabled, 'telegram_notifications_enabled': enabled } as StudentRow;
+        setLoggedStudent((previous) => (
+          previous ? { ...previous, telegram_notifications_enabled: enabled } : previous
+        ));
+
+        const nextStudent = {
+          ...(loggedStudent ?? {}),
+          telegram_notifications_enabled: enabled
+        } as StudentRow;
+
         window.localStorage.setItem(studentSessionStorageKey, JSON.stringify(nextStudent));
       }
     } catch {
