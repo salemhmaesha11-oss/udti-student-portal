@@ -8,17 +8,30 @@ import { writeAuditLog } from '../../lib/auditLog';
 type StudentRow = {
   id?: number | string;
   'الرقم الجامعي'?: string | number;
+  'كلمة السر'?: string;
   'اسم الطالب'?: string;
   'اسم الاب'?: string;
   'الكنية'?: string;
-  'الفئة'?: string;
-  'السنه الدراسية'?: string | number;
   'القسم'?: string;
+  'رقم الهاتف'?: string;
   'نوع التسجيل'?: string;
+  'ملاحظة'?: string;
+  'البريد الإلكتروني'?: string;
+  'الفئة'?: string;
+  'تاريخ_تغيير_الفئة'?: string | null;
+  'تاريخ الإنشاء'?: string | null;
+  'السنه الدراسية'?: string | number;
+  class?: string;
+  year?: string;
+  password?: string;
+  name?: string;
+  student_id?: string | number;
+  studentId?: string | number;
+  ['الرقم']?: string | number;
 };
 
 type AttendanceStatus = 'pending' | 'present' | 'absent';
-type SupervisorFeature = 'attendance' | 'admin' | 'supervisors' | 'logs';
+type SupervisorFeature = 'attendance' | 'admin' | 'supervisors' | 'logs' | 'students';
 type AdminRecord = Record<string, unknown>;
 
 type AttendanceEntry = {
@@ -76,6 +89,9 @@ const courseOptions = [
 
 const classOptions = ['أ', 'ب', 'ج', 'د'];
 const yearOptions = ['أولى', 'ثانية'];
+const allowedStudentClasses = ['أ', 'ب', 'ج', 'د'];
+const allowedStudentYears = ['أولى', 'ثانية'];
+const defaultStudentSection = 'تعويضات أسنان';
 const pendingAttendanceStorageKey = 'udti-pending-attendance-jobs';
 const studentCacheStorageKey = 'udti-attendance-student-cache';
 const localSessionLockKey = 'udti-active-attendance-session';
@@ -112,7 +128,7 @@ const getSupervisorDegree = (row: Record<string, unknown>) => {
 };
 
 const getSupervisorFeatures = (degree: string): SupervisorFeature[] => {
-  if (degree === '1') return ['admin', 'attendance', 'supervisors', 'logs'];
+  if (degree === '1') return ['admin', 'attendance', 'supervisors', 'logs', 'students'];
   if (['2', '3'].includes(degree)) return ['attendance'];
   return [];
 };
@@ -128,6 +144,13 @@ const getFullStudentName = (row: AdminRecord | StudentRow) => {
   const firstName = String(row['اسم الطالب'] ?? '').trim();
   const fatherName = String(row['اسم الاب'] ?? '').trim();
   const familyName = String(row['الكنية'] ?? '').trim();
+  return [firstName, fatherName, familyName].filter(Boolean).join(' ') || 'غير محدد';
+};
+
+const getStudentDisplayName = (student: StudentRow) => {
+  const firstName = String(student['اسم الطالب'] ?? student.name ?? '').trim();
+  const fatherName = String(student['اسم الاب'] ?? '').trim();
+  const familyName = String(student['الكنية'] ?? '').trim();
   return [firstName, fatherName, familyName].filter(Boolean).join(' ') || 'غير محدد';
 };
 
@@ -362,8 +385,103 @@ const getSupabaseErrorText = (error: unknown) => {
 };
 
 const getStudentIdentifier = (student: StudentRow) => {
-  return String(student['الرقم الجامعي'] ?? student.id ?? '').trim();
+  const direct = [
+    student['الرقم الجامعي'],
+    student['الرقم'],
+    student.student_id,
+    student.studentId,
+    student.id,
+    student['id'],
+  ].find((value) => value !== undefined && value !== null && String(value).trim() !== '');
+
+  if (direct !== undefined) return String(direct).trim();
+
+  for (const [key, value] of Object.entries(student)) {
+    if (value !== undefined && value !== null && String(value).trim() !== '' && /(رقم|id|student)/i.test(key)) {
+      return String(value).trim();
+    }
+  }
+
+  return '';
 };
+
+const normalizeStudentClassValue = (value: string) => {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+  const normalized = raw.toLowerCase().replace(/\s+/g, '');
+  if (['a', 'أ'].includes(normalized)) return 'أ';
+  if (['b', 'ب'].includes(normalized)) return 'ب';
+  if (['c', 'ج'].includes(normalized)) return 'ج';
+  if (['d', 'د'].includes(normalized)) return 'د';
+  return '';
+};
+
+const normalizeStudentYearValue = (value: string) => {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+  const normalized = raw.toLowerCase().replace(/\s+/g, '');
+  if (['1', 'اولى', 'أولى', 'first'].includes(normalized)) return 'أولى';
+  if (['2', 'ثانية', 'second'].includes(normalized)) return 'ثانية';
+  return '';
+};
+
+const getStudentValidationError = (draft: Record<string, string>) => {
+  const requiredFields = [
+    'اسم الطالب',
+    'اسم الاب',
+    'الكنية',
+    'رقم الهاتف',
+    'البريد الإلكتروني',
+  ] as const;
+
+  for (const field of requiredFields) {
+    const value = String(draft[field] ?? '').trim();
+    if (!value) {
+      return `الحقل ${field} مطلوب ولا يمكن تركه فارغاً`;
+    }
+  }
+
+  const classValue = normalizeStudentClassValue(String(draft['الفئة'] ?? ''));
+  if (!classValue || !allowedStudentClasses.includes(classValue as typeof allowedStudentClasses[number])) {
+    return 'الفئة يجب أن تكون واحدة من: أ، ب، ج، د فقط';
+  }
+
+  const yearValue = normalizeStudentYearValue(String(draft['السنه الدراسية'] ?? ''));
+  if (!yearValue || !allowedStudentYears.includes(yearValue as typeof allowedStudentYears[number])) {
+    return 'السنة الدراسية يجب أن تكون: أولى أو ثانية فقط';
+  }
+
+  if (!String(draft['القسم'] ?? '').trim()) {
+    return 'القسم مطلوب ويجب أن يكون تلقائياً تعويضات أسنان';
+  }
+
+  return '';
+};
+
+const normalizeStudentDraftValues = (draft: Record<string, string>) => {
+  const normalized: Record<string, string> = {
+    ...draft,
+    'القسم': String(draft['القسم'] ?? defaultStudentSection).trim() || defaultStudentSection,
+    'الفئة': normalizeStudentClassValue(draft['الفئة'] ?? '') || '',
+    'السنه الدراسية': normalizeStudentYearValue(draft['السنه الدراسية'] ?? '') || '',
+  };
+  return normalized;
+};
+
+const buildStudentEditDraft = (student: StudentRow) => ({
+  'الرقم الجامعي': String(getStudentIdentifier(student) || student['الرقم الجامعي'] || student['الرقم'] || student.student_id || student.studentId || student.id || ''),
+  'كلمة السر': String(student['كلمة السر'] ?? student.password ?? ''),
+  'اسم الطالب': String(student['اسم الطالب'] ?? student.name ?? ''),
+  'اسم الاب': String(student['اسم الاب'] ?? ''),
+  'الكنية': String(student['الكنية'] ?? ''),
+  'القسم': String(student['القسم'] ?? ''),
+  'الفئة': String(student['الفئة'] ?? ''),
+  'السنه الدراسية': String(student['السنه الدراسية'] ?? student.year ?? ''),
+  'رقم الهاتف': String(student['رقم الهاتف'] ?? ''),
+  'البريد الإلكتروني': String(student['البريد الإلكتروني'] ?? ''),
+  'نوع التسجيل': String(student['نوع التسجيل'] ?? ''),
+  'ملاحظة': String(student['ملاحظة'] ?? ''),
+});
 
 const readPendingAttendanceJobs = (): PendingAttendanceJob[] => {
   if (typeof window === 'undefined') return [];
@@ -796,6 +914,28 @@ export default function AttendancePage() {
   const [adminDateTo, setAdminDateTo] = useState('');
   const [adminRecordType, setAdminRecordType] = useState<'all' | 'attendance' | 'warnings'>('all');
   const [selectedAdminStudentId, setSelectedAdminStudentId] = useState('');
+  const [studentDirectory, setStudentDirectory] = useState<StudentRow[]>([]);
+  const [studentDirectorySearch, setStudentDirectorySearch] = useState('');
+  const [studentClassFilter, setStudentClassFilter] = useState('');
+  const [studentYearFilter, setStudentYearFilter] = useState('');
+  const [studentSectionFilter, setStudentSectionFilter] = useState('');
+  const [editingStudentId, setEditingStudentId] = useState('');
+  const [editingStudentDraft, setEditingStudentDraft] = useState<Record<string, string>>({});
+  const [showCreateStudentForm, setShowCreateStudentForm] = useState(false);
+  const [newStudentForm, setNewStudentForm] = useState<Record<string, string>>({
+    'الرقم الجامعي': '',
+    'كلمة السر': '',
+    'اسم الطالب': '',
+    'اسم الاب': '',
+    'الكنية': '',
+    'القسم': defaultStudentSection,
+    'الفئة': '',
+    'السنه الدراسية': '',
+    'رقم الهاتف': '',
+    'البريد الإلكتروني': '',
+    'نوع التسجيل': 'جديد',
+    'ملاحظة': '',
+  });
 
   useEffect(() => {
     try {
@@ -865,6 +1005,208 @@ export default function AttendancePage() {
     }
   };
 
+  const refreshStudentDirectory = async () => {
+    setAdminLoading(true);
+    try {
+      const tableNames = ['students', 'student'];
+      let finalRows: StudentRow[] = [];
+      let lastError: unknown = null;
+
+      for (const tableName of tableNames) {
+        const { data, error } = await supabase.from(tableName).select('*');
+        if (!error) {
+          finalRows = Array.isArray(data) ? (data as StudentRow[]) : [];
+          break;
+        }
+        lastError = error;
+      }
+
+      if (!finalRows.length && lastError) throw lastError;
+      setStudentDirectory(finalRows);
+    } catch (error) {
+      setNotice(`تعذر تحميل بيانات الطلاب: ${getSupabaseErrorText(error)}`);
+    } finally {
+      setAdminLoading(false);
+    }
+  };
+
+  const sanitizedStudentUpdatePayload = (payload: Record<string, string>) => {
+    return Object.fromEntries(
+      Object.entries(payload).filter(([, value]) => value !== null && value !== undefined && String(value).trim() !== '')
+    );
+  };
+
+  const handleOpenStudentEditor = (student: StudentRow) => {
+    const selectedStudentId = getStudentIdentifier(student);
+    if (!selectedStudentId) {
+      const fallbackId = Object.entries(student).find(([key, value]) => {
+        if (value === undefined || value === null || String(value).trim() === '') return false;
+        return /(?:رقم|id|student)/i.test(key);
+      });
+
+      const fallbackValue = fallbackId ? String(fallbackId[1]).trim() : '';
+      if (!fallbackValue) {
+        setNotice('هذا الطالب لا يحتوي على معرف صالح للتعديل.');
+        return;
+      }
+
+      setEditingStudentId(fallbackValue);
+      setEditingStudentDraft(buildStudentEditDraft({ ...student, ['الرقم الجامعي']: fallbackValue }));
+      return;
+    }
+
+    setEditingStudentId(selectedStudentId);
+    setEditingStudentDraft(buildStudentEditDraft(student));
+  };
+
+  const saveEditedStudent = async () => {
+    if (!editingStudentId) return;
+
+    const draftCopy: Record<string, string> = {
+      ...editingStudentDraft,
+      'القسم': String(editingStudentDraft['القسم'] ?? defaultStudentSection).trim() || defaultStudentSection,
+    };
+
+    const validationError = getStudentValidationError(draftCopy);
+    if (validationError) {
+      setNotice(validationError);
+      return;
+    }
+
+    const normalizedDraft: Record<string, string> = normalizeStudentDraftValues(draftCopy);
+    normalizedDraft['القسم'] = defaultStudentSection;
+
+    const payload: Record<string, string> = {};
+    const editableFields = [
+      'الرقم الجامعي',
+      'كلمة السر',
+      'اسم الطالب',
+      'اسم الاب',
+      'الكنية',
+      'القسم',
+      'الفئة',
+      'السنه الدراسية',
+      'رقم الهاتف',
+      'البريد الإلكتروني',
+      'نوع التسجيل',
+      'ملاحظة',
+    ];
+
+    editableFields.forEach((field) => {
+      if (normalizedDraft[field] !== undefined) {
+        const value = String(normalizedDraft[field] ?? '').trim();
+        if (value !== '') payload[field] = value;
+      }
+    });
+
+    if (!Object.keys(payload).length) {
+      setNotice('لا توجد بيانات جديدة لتحديثها');
+      return;
+    }
+
+    const studentId = String(normalizedDraft['الرقم الجامعي'] ?? editingStudentId).trim();
+    if (!studentId) {
+      setNotice('لا يوجد رقم جامعي صالح لتحديث الطالب');
+      return;
+    }
+
+    const cleanPayload = Object.fromEntries(
+      Object.entries(payload).filter(([, value]) => value !== undefined && value !== null && value !== '')
+    ) as Record<string, string>;
+
+    const selectedStudent = studentDirectory.find((row) => {
+      const rowId = getStudentIdentifier(row);
+      return rowId === editingStudentId || String(row.id ?? '') === editingStudentId || String(row['الرقم الجامعي'] ?? row['الرقم'] ?? row.student_id ?? row.studentId ?? row.id ?? '') === editingStudentId;
+    }) ?? studentDirectory.find((row) => getStudentIdentifier(row) === studentId || String(row.id ?? '') === studentId);
+
+    const idSearchValues = selectedStudent
+      ? [
+          String(selectedStudent['الرقم الجامعي'] ?? selectedStudent['الرقم'] ?? selectedStudent.student_id ?? selectedStudent.studentId ?? selectedStudent.id ?? ''),
+          String(selectedStudent.id ?? ''),
+        ].filter(Boolean)
+      : [studentId];
+
+    const candidateTableNames = ['students', 'student'];
+    let lastError: unknown = null;
+
+    for (const tableName of candidateTableNames) {
+      for (const fieldName of ['الرقم الجامعي', 'الرقم', 'student_id', 'studentId', 'id']) {
+        for (const lookupValue of idSearchValues) {
+          const result = await supabase.from(tableName).update(cleanPayload).eq(fieldName, lookupValue);
+          if (!result.error) {
+            setNotice('تم تحديث بيانات الطالب بنجاح');
+            setEditingStudentId('');
+            setEditingStudentDraft({});
+            await refreshStudentDirectory();
+            return;
+          }
+          lastError = result.error;
+        }
+      }
+    }
+
+    setNotice(`تعذر تحديث بيانات الطالب: ${getSupabaseErrorText(lastError ?? 'خطأ غير معروف')}`);
+  };
+
+  const createStudentAccount = async () => {
+    const draft: Record<string, string> = {
+      ...newStudentForm,
+      'القسم': defaultStudentSection,
+    };
+
+    const validationError = getStudentValidationError(draft);
+    if (validationError) {
+      setNotice(validationError);
+      return;
+    }
+
+    const normalizedDraft: Record<string, string> = normalizeStudentDraftValues(draft);
+    normalizedDraft['القسم'] = defaultStudentSection;
+
+    const payload: Record<string, string> = {
+      'الرقم الجامعي': String(normalizedDraft['الرقم الجامعي'] ?? '').trim(),
+      'كلمة السر': String(normalizedDraft['كلمة السر'] ?? '').trim() || '123456',
+      'اسم الطالب': String(normalizedDraft['اسم الطالب'] ?? '').trim(),
+      'اسم الاب': String(normalizedDraft['اسم الاب'] ?? '').trim(),
+      'الكنية': String(normalizedDraft['الكنية'] ?? '').trim(),
+      'القسم': defaultStudentSection,
+      'الفئة': String(normalizedDraft['الفئة'] ?? '').trim(),
+      'السنه الدراسية': String(normalizedDraft['السنه الدراسية'] ?? '').trim(),
+      'رقم الهاتف': String(normalizedDraft['رقم الهاتف'] ?? '').trim(),
+      'البريد الإلكتروني': String(normalizedDraft['البريد الإلكتروني'] ?? '').trim(),
+      'نوع التسجيل': String(normalizedDraft['نوع التسجيل'] ?? 'جديد').trim() || 'جديد',
+      'ملاحظة': String(normalizedDraft['ملاحظة'] ?? '').trim(),
+    };
+
+    try {
+      const { error } = await supabase.from('students').insert([payload]);
+      if (error) {
+        setNotice(`تعذر إنشاء حساب الطالب: ${error.message}`);
+        return;
+      }
+
+      setNotice('تم إنشاء حساب الطالب بنجاح');
+      setShowCreateStudentForm(false);
+      setNewStudentForm({
+        'الرقم الجامعي': '',
+        'كلمة السر': '',
+        'اسم الطالب': '',
+        'اسم الاب': '',
+        'الكنية': '',
+        'القسم': defaultStudentSection,
+        'الفئة': '',
+        'السنه الدراسية': '',
+        'رقم الهاتف': '',
+        'البريد الإلكتروني': '',
+        'نوع التسجيل': 'جديد',
+        'ملاحظة': '',
+      });
+      await refreshStudentDirectory();
+    } catch (error) {
+      setNotice(`تعذر إنشاء حساب الطالب: ${getSupabaseErrorText(error)}`);
+    }
+  };
+
   const normalizedAdminSearch = adminSearch.trim().toLowerCase();
   const getAdminStudentName = (record: AdminRecord) => {
     const studentId = String(getAdminRecordValue(record, ['الرقم الجامعي', 'student_id', 'studentId'])).trim();
@@ -903,6 +1245,39 @@ export default function AttendancePage() {
     ...filteredAdminAttendance,
     ...filteredAdminWarnings,
   ].map((record) => String(getAdminRecordValue(record, ['الرقم الجامعي', 'student_id', 'studentId']))).filter(Boolean))), [filteredAdminAttendance, filteredAdminWarnings]);
+
+  const studentClassOptions = useMemo(() => {
+    const options = new Set<string>(['أ', 'ب', 'ج', 'د', 'بدون فئة']);
+    studentDirectory.forEach((student) => {
+      const className = String(student['الفئة'] ?? '').trim();
+      if (className) options.add(className);
+      if (!className || className === 'غير محدد') options.add('بدون فئة');
+    });
+    return Array.from(options);
+  }, [studentDirectory]);
+
+  const filteredStudentDirectory = useMemo(() => {
+    const normalizedSearch = studentDirectorySearch.trim().toLowerCase();
+    return studentDirectory.filter((student) => {
+      const studentId = String(student['الرقم الجامعي'] ?? student.id ?? '').trim();
+      const studentName = String(student['اسم الطالب'] ?? '').trim();
+      const fatherName = String(student['اسم الاب'] ?? '').trim();
+      const familyName = String(student['الكنية'] ?? '').trim();
+      const section = String(student['القسم'] ?? '').trim();
+      const rawClassName = String(student['الفئة'] ?? '').trim();
+      const className = rawClassName || 'بدون فئة';
+      const normalizedClassName = className === 'غير محدد' ? 'بدون فئة' : className;
+      const year = String(student['السنه الدراسية'] ?? '').trim();
+      const searchable = `${studentId} ${studentName} ${fatherName} ${familyName} ${section} ${normalizedClassName}`.toLowerCase();
+
+      const matchesSearch = !normalizedSearch || searchable.includes(normalizedSearch);
+      const matchesClass = !studentClassFilter || (studentClassFilter === 'بدون فئة' ? (!rawClassName || rawClassName === 'غير محدد') : normalizedClassName === studentClassFilter);
+      const matchesYear = !studentYearFilter || year === studentYearFilter;
+      const matchesSection = !studentSectionFilter || section === studentSectionFilter;
+
+      return matchesSearch && matchesClass && matchesYear && matchesSection;
+    });
+  }, [studentDirectory, studentDirectorySearch, studentClassFilter, studentYearFilter, studentSectionFilter]);
 
   const selectedStudentAttendance = selectedAdminStudentId
     ? filteredAdminAttendance.filter((record) => String(getAdminRecordValue(record, ['الرقم الجامعي', 'student_id', 'studentId'])) === selectedAdminStudentId)
@@ -1025,6 +1400,12 @@ export default function AttendancePage() {
   useEffect(() => {
     void refreshRecentSessions();
   }, []);
+
+  useEffect(() => {
+    if (supervisorLoggedIn && selectedFeature === 'students') {
+      void refreshStudentDirectory();
+    }
+  }, [supervisorLoggedIn, selectedFeature]);
 
   const handleSupervisorLogin = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -1478,6 +1859,23 @@ export default function AttendancePage() {
                   <span className="feature-arrow" aria-hidden="true">←</span>
                 </button>
               )}
+              {supervisorFeatures.includes('students') && (
+                <button type="button" className="supervisor-feature-card" onClick={() => {
+                  setSelectedFeature('students');
+                  const stored = JSON.parse(window.localStorage.getItem(supervisorSessionStorageKey) || '{}') as StoredSupervisorSession;
+                  window.localStorage.setItem(supervisorSessionStorageKey, JSON.stringify({ ...stored, selectedFeature: 'students' }));
+                  void refreshStudentDirectory();
+                  writeAuditLog({ action: 'feature_opened', userType: 'supervisor', username: supervisorUsername, details: { feature: 'students' } });
+                  setNotice('تم فتح قائمة الطلاب وتعديل بياناتهم.');
+                }}>
+                  <span className="feature-icon" aria-hidden="true">👥</span>
+                  <span>
+                    <strong>الطلاب</strong>
+                    <small>البحث، التصفية، وتعديل بيانات جميع الطلاب</small>
+                  </span>
+                  <span className="feature-arrow" aria-hidden="true">←</span>
+                </button>
+              )}
               {supervisorFeatures.includes('supervisors') && (
                 <button type="button" className="supervisor-feature-card" onClick={() => {
                   setSelectedFeature('supervisors');
@@ -1632,6 +2030,149 @@ export default function AttendancePage() {
 
             {(adminRecordType === 'all' || adminRecordType === 'warnings') && (
               <div className="admin-table-section"><h2>آخر الإنذارات</h2><div className="admin-record-list">{filteredAdminWarnings.slice(0, 50).map((warning, index) => <div className="admin-record-item warning-record" key={`${getAdminRecordId(warning)}-${index}`}><strong>{getAdminStudentName(warning)}</strong><span>{getAdminRecordCourse(warning)} - {getAdminRecordDate(warning)}</span><span>المشرف: {getAdminRecordSupervisor(warning)} - {String(getAdminRecordValue(warning, ['الوقت', 'time']) || '')}</span><div className="admin-record-actions"><button type="button" onClick={() => setSelectedAdminStudentId(String(getAdminRecordValue(warning, ['الرقم الجامعي', 'student_id', 'studentId'])))}>تفاصيل</button><button type="button" onClick={() => void handleWarningToAttendance(warning)}>تحويل لحضور</button><button type="button" className="danger" onClick={() => void handleDeleteWarning(warning)}>حذف</button></div></div>)}</div></div>
+            )}
+          </section>
+        )}
+
+        {supervisorLoggedIn && selectedFeature === 'students' && (
+          <section className="admin-dashboard-panel">
+            <div className="admin-dashboard-heading">
+              <div>
+                <span className="feature-panel-kicker">إدارة الطلاب</span>
+                <h1>الطلاب</h1>
+                <p>ابحث فلة الطلاب وتعديل بياناتهم مباشرة من جدول student.</p>
+              </div>
+              <button type="button" className="action-button primary" onClick={() => void refreshStudentDirectory()} disabled={adminLoading}>
+                {adminLoading ? 'جاري التحديث...' : 'تحديث الطلاب'}
+              </button>
+            </div>
+
+            <div className="admin-filter-grid">
+              <div className="field-group">
+                <label htmlFor="student-directory-search">بحث</label>
+                <input id="student-directory-search" value={studentDirectorySearch} onChange={(event) => setStudentDirectorySearch(event.target.value)} placeholder="اسم الطالب، الرقم الجامعي، الفئة أو القسم" />
+              </div>
+              <div className="field-group">
+                <label htmlFor="student-directory-class">الفئة</label>
+                <select id="student-directory-class" value={studentClassFilter} onChange={(event) => setStudentClassFilter(event.target.value)}>
+                  <option value="">اختر الفئة أولاً</option>
+                  {studentClassOptions.map((className) => (
+                    <option key={className} value={className}>{className === 'بدون فئة' ? 'بدون فئة' : `فئة ${className}`}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="field-group">
+                <label htmlFor="student-directory-year">السنة</label>
+                <select id="student-directory-year" value={studentYearFilter} onChange={(event) => setStudentYearFilter(event.target.value)}>
+                  <option value="">كل السنوات</option>
+                  {Array.from(new Set(studentDirectory.map((student) => String(student['السنه الدراسية'] ?? '')).filter(Boolean))).map((year) => (
+                    <option key={year} value={year}>{year}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="field-group">
+                <label htmlFor="student-directory-section">القسم</label>
+                <select id="student-directory-section" value={studentSectionFilter} onChange={(event) => setStudentSectionFilter(event.target.value)}>
+                  <option value="">كل الأقسام</option>
+                  {Array.from(new Set(studentDirectory.map((student) => String(student['القسم'] ?? '')).filter(Boolean))).map((section) => (
+                    <option key={section} value={section}>{section}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="admin-record-actions" style={{ marginBottom: 18 }}>
+              <button type="button" className="action-button primary" onClick={() => setShowCreateStudentForm((state) => !state)}>
+                {showCreateStudentForm ? 'إغلاق نموذج إنشاء الحساب' : 'إنشاء حساب طالب'}
+              </button>
+            </div>
+
+            {!studentClassFilter ? (
+              <div className="loading-box">اختر الفئة أولاً ثم ستظهر طلاب تلك الفئة فقط، أو اختر بدون فئة لعرض الطلاب غير المخصصين لفئة.</div>
+            ) : null}
+
+            {showCreateStudentForm && (
+              <form className="admin-supervisor-form" onSubmit={(event) => {
+                event.preventDefault();
+                void createStudentAccount();
+              }}>
+                <input value={newStudentForm['الرقم الجامعي'] ?? ''} onChange={(event) => setNewStudentForm({ ...newStudentForm, 'الرقم الجامعي': event.target.value })} placeholder="الرقم الجامعي" required />
+                <input value={newStudentForm['كلمة السر'] ?? ''} onChange={(event) => setNewStudentForm({ ...newStudentForm, 'كلمة السر': event.target.value })} placeholder="كلمة السر" type="text" />
+                <input value={newStudentForm['اسم الطالب'] ?? ''} onChange={(event) => setNewStudentForm({ ...newStudentForm, 'اسم الطالب': event.target.value })} placeholder="اسم الطالب" required />
+                <input value={newStudentForm['اسم الاب'] ?? ''} onChange={(event) => setNewStudentForm({ ...newStudentForm, 'اسم الاب': event.target.value })} placeholder="اسم الأب" required />
+                <input value={newStudentForm['الكنية'] ?? ''} onChange={(event) => setNewStudentForm({ ...newStudentForm, 'الكنية': event.target.value })} placeholder="الكنية" required />
+                <select value={newStudentForm['الفئة'] ?? ''} onChange={(event) => setNewStudentForm({ ...newStudentForm, 'الفئة': event.target.value })} required>
+                  <option value="">اختر الفئة</option>
+                  {allowedStudentClasses.map((className) => <option key={className} value={className}>{className}</option>)}
+                </select>
+                <select value={newStudentForm['السنه الدراسية'] ?? ''} onChange={(event) => setNewStudentForm({ ...newStudentForm, 'السنه الدراسية': event.target.value })} required>
+                  <option value="">اختر السنة</option>
+                  {allowedStudentYears.map((year) => <option key={year} value={year}>{year}</option>)}
+                </select>
+                <input value={newStudentForm['القسم'] ?? defaultStudentSection} readOnly />
+                <input value={newStudentForm['رقم الهاتف'] ?? ''} onChange={(event) => setNewStudentForm({ ...newStudentForm, 'رقم الهاتف': event.target.value })} placeholder="رقم الهاتف" required />
+                <input value={newStudentForm['البريد الإلكتروني'] ?? ''} onChange={(event) => setNewStudentForm({ ...newStudentForm, 'البريد الإلكتروني': event.target.value })} placeholder="البريد الإلكتروني" type="email" required />
+                <input value={newStudentForm['نوع التسجيل'] ?? 'جديد'} onChange={(event) => setNewStudentForm({ ...newStudentForm, 'نوع التسجيل': event.target.value })} placeholder="نوع التسجيل" />
+                <textarea value={newStudentForm['ملاحظة'] ?? ''} onChange={(event) => setNewStudentForm({ ...newStudentForm, 'ملاحظة': event.target.value })} placeholder="ملاحظة" rows={3} />
+                <div className="admin-record-actions">
+                  <button type="submit" className="action-button primary">حفظ الحساب</button>
+                  <button type="button" className="action-button warning" onClick={() => { setShowCreateStudentForm(false); setNewStudentForm({ ...newStudentForm, 'القسم': defaultStudentSection }); }}>إلغاء</button>
+                </div>
+              </form>
+            )}
+
+            <div className="admin-record-list">
+              {filteredStudentDirectory.map((student) => {
+                const id = String(student['الرقم الجامعي'] ?? student.id ?? '').trim();
+                const name = getStudentDisplayName(student);
+                return (
+                  <div className="admin-record-item" key={`${id || name}-${student['الفئة'] || 'unknown'}`}>
+                    <strong>{name}</strong>
+                    <span>الرقم: {id || 'غير محدد'}</span>
+                    <span>الفئة: {String(student['الفئة'] ?? 'غير محدد')}</span>
+                    <span>القسم: {String(student['القسم'] ?? 'غير محدد')}</span>
+                    <span>السنة: {String(student['السنه الدراسية'] ?? 'غير محدد')}</span>
+                    <div className="admin-record-actions">
+                      <button
+                        type="button"
+                        onClick={() => handleOpenStudentEditor(student)}
+                      >
+                        تعديل
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {editingStudentId && (
+              <form className="admin-supervisor-form" onSubmit={(event) => {
+                event.preventDefault();
+                void saveEditedStudent();
+              }}>
+                <input value={editingStudentDraft['اسم الطالب'] ?? ''} onChange={(event) => setEditingStudentDraft({ ...editingStudentDraft, 'اسم الطالب': event.target.value })} placeholder="اسم الطالب" required />
+                <input value={editingStudentDraft['اسم الاب'] ?? ''} onChange={(event) => setEditingStudentDraft({ ...editingStudentDraft, 'اسم الاب': event.target.value })} placeholder="اسم الأب" required />
+                <input value={editingStudentDraft['الكنية'] ?? ''} onChange={(event) => setEditingStudentDraft({ ...editingStudentDraft, 'الكنية': event.target.value })} placeholder="الكنية" required />
+                <input value={editingStudentDraft['الرقم الجامعي'] ?? ''} onChange={(event) => setEditingStudentDraft({ ...editingStudentDraft, 'الرقم الجامعي': event.target.value })} placeholder="الرقم الجامعي" required />
+                <input value={editingStudentDraft['كلمة السر'] ?? ''} onChange={(event) => setEditingStudentDraft({ ...editingStudentDraft, 'كلمة السر': event.target.value })} placeholder="كلمة السر" type="text" />
+                <input value={editingStudentDraft['القسم'] ?? defaultStudentSection} onChange={(event) => setEditingStudentDraft({ ...editingStudentDraft, 'القسم': event.target.value })} placeholder="القسم" readOnly />
+                <select value={editingStudentDraft['الفئة'] ?? ''} onChange={(event) => setEditingStudentDraft({ ...editingStudentDraft, 'الفئة': event.target.value })} required>
+                  <option value="">اختر الفئة</option>
+                  {allowedStudentClasses.map((className) => <option key={className} value={className}>{className}</option>)}
+                </select>
+                <select value={editingStudentDraft['السنه الدراسية'] ?? ''} onChange={(event) => setEditingStudentDraft({ ...editingStudentDraft, 'السنه الدراسية': event.target.value })} required>
+                  <option value="">اختر السنة</option>
+                  {allowedStudentYears.map((year) => <option key={year} value={year}>{year}</option>)}
+                </select>
+                <input value={editingStudentDraft['رقم الهاتف'] ?? ''} onChange={(event) => setEditingStudentDraft({ ...editingStudentDraft, 'رقم الهاتف': event.target.value })} placeholder="رقم الهاتف" required />
+                <input value={editingStudentDraft['البريد الإلكتروني'] ?? ''} onChange={(event) => setEditingStudentDraft({ ...editingStudentDraft, 'البريد الإلكتروني': event.target.value })} placeholder="البريد الإلكتروني" type="email" required />
+                <input value={editingStudentDraft['نوع التسجيل'] ?? ''} onChange={(event) => setEditingStudentDraft({ ...editingStudentDraft, 'نوع التسجيل': event.target.value })} placeholder="نوع التسجيل" />
+                <textarea value={editingStudentDraft['ملاحظة'] ?? ''} onChange={(event) => setEditingStudentDraft({ ...editingStudentDraft, 'ملاحظة': event.target.value })} placeholder="ملاحظة" rows={3} />
+                <div className="admin-record-actions">
+                  <button type="submit" className="action-button primary">حفظ التعديل</button>
+                  <button type="button" className="action-button warning" onClick={() => { setEditingStudentId(''); setEditingStudentDraft({}); }}>إلغاء</button>
+                </div>
+              </form>
             )}
           </section>
         )}

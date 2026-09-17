@@ -40,6 +40,21 @@ export const normalizeText = (value: unknown) => {
   return String(value).trim();
 };
 
+export const decodeSupabaseArabicKey = (value: string) => {
+  if (!value) return value;
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+};
+
+export const sanitizeSupabasePayload = <T extends Record<string, unknown>>(payload: T) => {
+  return Object.fromEntries(
+    Object.entries(payload).filter(([, value]) => value !== null && value !== undefined)
+  ) as Partial<T>;
+};
+
 export const getRecordValue = (row: Record<string, unknown>, keys: string[]) => {
   for (const key of keys) {
     const value = row[key];
@@ -86,6 +101,218 @@ export const getTableRows = async (tableNames: string[]) => {
   }
 
   return { data: [], tableName: tableNames[0], error: null };
+};
+
+export type ClassCapacityInfo = {
+  name: string;
+  capacity: number | null;
+  occupied: number;
+  available: number | null;
+  tableName: string;
+};
+
+const numericValueFromRow = (row: Record<string, unknown>, keys: string[]) => {
+  const value = getRecordValue(row, keys);
+  if (value === undefined) return null;
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const cleaned = value.trim().replace(/,/g, '').replace(/[^0-9.-]/g, '');
+    if (!cleaned || cleaned === '-' || cleaned === '.') return null;
+    const parsed = Number(cleaned);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+};
+
+const normalizeClassName = (value: unknown) => {
+  const text = normalizeText(value)
+    .replace(/^الفئة\s*|^فئة\s*|^class\s*/i, '')
+    .replace(/[_\-\s]/g, '')
+    .trim();
+
+  return text || 'غير محدد';
+};
+
+const getClassNameFromRow = (row: Record<string, unknown>) => {
+  const directName = getRecordValue(row, ['اسم الفئة', 'اسم_الفئة', 'الفئة', 'class', 'class_name', 'الفئة_الجامعية', 'name']);
+  const normalized = normalizeText(directName).replace(/^الفئة\s*|^فئة\s*/i, '').trim();
+  return normalized || 'غير محدد';
+};
+
+const getStudentClassCounts = async () => {
+  const { data, error } = await supabase.from('students').select('*');
+  if (error) return {} as Record<string, number>;
+
+  const counts: Record<string, number> = {};
+  for (const row of (Array.isArray(data) ? data : []) as Record<string, unknown>[]) {
+    const classValue = row['الفئة'] ?? row.class ?? row.class_name ?? row['اسم الفئة'];
+    if (classValue === undefined || classValue === null || classValue === '') continue;
+
+    const normalized = normalizeClassName(classValue);
+    if (normalized === 'غير محدد') continue;
+
+    counts[normalized] = (counts[normalized] ?? 0) + 1;
+  }
+
+  return counts;
+};
+
+export const syncClassSeatCounts = async () => {
+  const { data: classRowsData, error: classRowsError } = await supabase.from('الفئات').select('*');
+  const { data: studentRowsData, error: studentRowsError } = await supabase.from('students').select('*');
+
+  if (classRowsError || studentRowsError) {
+    return { success: false, synced: 0, error: classRowsError?.message ?? studentRowsError?.message ?? 'unknown' };
+  }
+
+  const classRows = Array.isArray(classRowsData) ? (classRowsData as Record<string, unknown>[]) : [];
+  const studentRows = Array.isArray(studentRowsData) ? (studentRowsData as Record<string, unknown>[]) : [];
+
+  if (!classRows.length) return { success: true, synced: 0 };
+
+  const counts: Record<string, number> = {};
+  for (const row of studentRows) {
+    const classValue = row['الفئة'] ?? row.class ?? row.class_name ?? row['اسم الفئة'];
+    if (classValue === undefined || classValue === null || classValue === '') continue;
+    const normalized = normalizeClassName(classValue);
+    if (normalized === 'غير محدد') continue;
+    counts[normalized] = (counts[normalized] ?? 0) + 1;
+  }
+
+  let synced = 0;
+  for (const row of classRows) {
+    const className = String(row['اسم الفئة'] ?? row['name'] ?? '').trim();
+    if (!className) continue;
+
+    const normalizedName = normalizeClassName(className);
+    const occupied = counts[normalizedName] ?? 0;
+    const capacity = numericValueFromRow(row, ['السعة']) ?? 0;
+
+    const updatedPayload: Record<string, unknown> = {
+      'المشغولة': occupied,
+      occupied,
+      filled_seats: occupied,
+      students_count: occupied,
+      'عدد_الطلاب': occupied,
+      'المقاعد_الفارغة': Math.max(capacity - occupied, 0),
+      available_seats: Math.max(capacity - occupied, 0),
+      remaining_seats: Math.max(capacity - occupied, 0),
+      'المقاعد_المتبقية': Math.max(capacity - occupied, 0),
+    };
+
+    const safeUpdatedPayload = sanitizeSupabasePayload(updatedPayload);
+
+    const { error } = await supabase.from('الفئات').update(safeUpdatedPayload).eq('اسم الفئة', className);
+    if (!error) {
+      synced += 1;
+    }
+  }
+
+  return { success: true, synced };
+};
+
+export const getClassCapacityInfo = async (className: string): Promise<ClassCapacityInfo | null> => {
+  const normalizedTarget = normalizeClassName(className);
+  const studentCounts = await getStudentClassCounts();
+
+  const { data, error } = await supabase.from('الفئات').select('*');
+  if (error) {
+    throw error;
+  }
+
+  const rows = Array.isArray(data) ? (data as Record<string, unknown>[]) : [];
+  const matches = rows.filter((row) => {
+    const comparisonName = normalizeClassName(getClassNameFromRow(row));
+    return !normalizedTarget || comparisonName === normalizedTarget || comparisonName.includes(normalizedTarget) || normalizedTarget.includes(comparisonName);
+  });
+
+  if (!matches.length) {
+    const fallbackName = normalizeClassName(className);
+    const occupiedFallback = studentCounts[fallbackName] ?? 0;
+    return { name: fallbackName, capacity: null, occupied: occupiedFallback, available: null, tableName: 'الفئات' };
+  }
+
+  const row = matches[0];
+  const resolvedName = getClassNameFromRow(row);
+  const capacity = numericValueFromRow(row, ['السعة']);
+  const occupiedFromRow = numericValueFromRow(row, ['المشغولة', 'عدد_الطلاب', 'students_count']);
+  const occupied = occupiedFromRow ?? (studentCounts[normalizeClassName(resolvedName)] ?? 0);
+  const availableFromRow = numericValueFromRow(row, ['المقاعد_الفارغة', 'available_seats', 'remaining_seats', 'المقاعد_المتبقية']);
+  const available = availableFromRow ?? (capacity !== null ? Math.max(capacity - occupied, 0) : null);
+
+  return {
+    name: resolvedName,
+    capacity,
+    occupied,
+    available,
+    tableName: 'الفئات',
+  };
+};
+
+export const getClassAvailabilityOptions = async () => {
+  const studentCounts = await getStudentClassCounts();
+  const { data, error } = await supabase.from('الفئات').select('*');
+
+  if (error) {
+    throw error;
+  }
+
+  const rows = Array.isArray(data) ? (data as Record<string, unknown>[]) : [];
+  const mappedRows: Array<{ name: string; capacity: number | null; occupied: number; available: number | null }> = [];
+  const seen = new Set<string>();
+
+  for (const row of rows) {
+    const name = String(row['اسم الفئة'] ?? row['name'] ?? '').trim();
+    if (!name) continue;
+
+    const normalizedName = normalizeClassName(name);
+    if (seen.has(normalizedName)) continue;
+    seen.add(normalizedName);
+
+    const capacity = numericValueFromRow(row, ['السعة']);
+    const occupied = studentCounts[normalizedName] ?? 0;
+    const available = capacity !== null ? Math.max(capacity - occupied, 0) : null;
+    mappedRows.push({ name: normalizedName, capacity, occupied, available });
+  }
+
+  for (const [name, occupied] of Object.entries(studentCounts)) {
+    if (!seen.has(name)) {
+      mappedRows.push({ name, capacity: null, occupied, available: null });
+    }
+  }
+
+  return mappedRows;
+};
+
+export const updateStudentClass = async (studentId: string, nextClass: string) => {
+  const trimmedId = String(studentId ?? '').trim();
+  const normalizedNextClass = String(nextClass ?? '').trim();
+  if (!trimmedId || !normalizedNextClass) return { success: false, error: 'missing-class-or-student' };
+
+  const classInfo = await getClassCapacityInfo(normalizedNextClass);
+  if (classInfo && classInfo.available !== null && classInfo.available <= 0) {
+    return { success: false, error: 'class-full' };
+  }
+
+  const safePayload = {
+    'الفئة': normalizedNextClass,
+    'تاريخ_تغيير_الفئة': new Date().toISOString(),
+  };
+
+  const directUpdate = await supabase.from('students').update(safePayload).eq('الرقم الجامعي', trimmedId);
+  if (!directUpdate.error) {
+    await syncClassSeatCounts();
+    return { success: true };
+  }
+
+  const fallbackUpdate = await supabase.from('students').update(safePayload).eq('id', trimmedId);
+  if (!fallbackUpdate.error) {
+    await syncClassSeatCounts();
+    return { success: true };
+  }
+
+  const message = String(directUpdate.error?.message ?? fallbackUpdate.error?.message ?? '');
+  return { success: false, error: message || 'student-update-failed' };
 };
 
 export const getStudentById = async (studentId: string) => {

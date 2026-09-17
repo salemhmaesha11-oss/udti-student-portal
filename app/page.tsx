@@ -6,11 +6,13 @@ import { supabase } from '../lib/supabase';
 import { writeAuditLog } from '../lib/auditLog';
 import {
   getAttendanceForStudent,
+  getClassAvailabilityOptions,
   getStudentById,
   getWarningsForStudent,
   getRecordValue,
   normalizeText,
   StudentRow,
+  updateStudentClass,
 } from '../lib/studentData';
 
 type TabKey = 'grades' | 'record' | 'status';
@@ -179,9 +181,36 @@ export default function Home() {
     { label: 'منتظر', value: '0', tone: 'waiting' },
   ]);
   const [studentStatus, setStudentStatus] = useState<string>('غير متوفر');
+  const [classOptions, setClassOptions] = useState<Array<{ name: string; capacity: number | null; occupied: number; available: number | null }>>([]);
+  const [selectedClassForUpdate, setSelectedClassForUpdate] = useState('');
+  const [isChangingClass, setIsChangingClass] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [capsLockOn, setCapsLockOn] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
+
+  const refreshClassOptions = async () => {
+    try {
+      const results = await getClassAvailabilityOptions();
+      const normalized = results.map((item) => ({
+        ...item,
+        name: String(item.name || '').trim() || 'غير محدد',
+        available: item.available !== null ? Math.max(item.available, 0) : null,
+      }));
+      setClassOptions(normalized);
+
+      if (loggedStudent?.['الفئة']) {
+        const currentClass = String(loggedStudent['الفئة']).trim();
+        const currentExists = normalized.some((item) => item.name === currentClass || `فئة ${item.name}` === currentClass || item.name === `فئة ${currentClass}`);
+        if (!currentExists && normalized[0]) {
+          setSelectedClassForUpdate(normalized[0].name);
+        } else {
+          setSelectedClassForUpdate(currentClass);
+        }
+      }
+    } catch {
+      setClassOptions([]);
+    }
+  };
 
   useEffect(() => {
     if (!toast) return;
@@ -209,6 +238,12 @@ export default function Home() {
     { key: 'record', label: 'السجل' },
     { key: 'status', label: 'الحالة' },
   ] as const;
+
+  useEffect(() => {
+    if (loggedStudent) {
+      void refreshClassOptions();
+    }
+  }, [loggedStudent]);
 
   useEffect(() => {
     const loadDashboard = async () => {
@@ -290,6 +325,55 @@ export default function Home() {
       setToast({ message: 'حدث خطأ أثناء تسجيل الدخول', type: 'error' });
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleClassChange = async () => {
+    const nextClass = String(selectedClassForUpdate ?? '').trim();
+    const currentClass = String(loggedStudent?.['الفئة'] ?? '').trim();
+
+    if (!nextClass) {
+      setToast({ message: 'يرجى اختيار الفئة المراد الانتقال إليها', type: 'error' });
+      return;
+    }
+
+    if (nextClass === currentClass || `فئة ${nextClass}` === currentClass || nextClass === `فئة ${currentClass}`) {
+      setToast({ message: 'هذه الفئة هي الفئة الحالية', type: 'info' });
+      return;
+    }
+
+    setIsChangingClass(true);
+    try {
+      const result = await updateStudentClass(String(loggedStudent?.['الرقم الجامعي'] ?? ''), nextClass);
+      if (!result.success) {
+        setNotice(result.error === 'class-full' ? 'لا يمكن الانتقال إلى هذه الفئة لأن المقاعد ممتلئة' : 'تعذر تغيير الفئة');
+        setToast({ message: result.error === 'class-full' ? 'لا توجد مقاعد متاحة في هذه الفئة' : 'تعذر تغيير الفئة', type: 'error' });
+        return;
+      }
+
+      const updatedStudent = {
+        ...(loggedStudent ?? {}),
+        'الفئة': nextClass,
+        'تاريخ_تغيير_الفئة': new Date().toISOString(),
+      };
+
+      setLoggedStudent(updatedStudent as StudentRow);
+      window.localStorage.setItem(studentSessionStorageKey, JSON.stringify(updatedStudent));
+      setNotice(`تم تغيير الفئة بنجاح إلى ${nextClass}`);
+      setToast({ message: `تم تغيير الفئة إلى ${nextClass}`, type: 'success' });
+      await refreshClassOptions();
+      writeAuditLog({
+        action: 'student_class_changed',
+        userType: 'student',
+        userId: loggedStudent?.['الرقم الجامعي'],
+        username: String(loggedStudent?.['اسم الطالب'] ?? ''),
+        details: { previousClass: currentClass, nextClass },
+      });
+    } catch {
+      setNotice('حدث خطأ أثناء تغيير الفئة');
+      setToast({ message: 'حدث خطأ أثناء تغيير الفئة', type: 'error' });
+    } finally {
+      setIsChangingClass(false);
     }
   };
 
@@ -487,6 +571,60 @@ export default function Home() {
             <div className="info-item"><span className="info-label"><i className="fa-solid fa-users" /> الكنية</span> {formatStudentValue(loggedStudent?.['الكنية'])}</div>
             <div className="info-item"><span className="info-label"><i className="fa-solid fa-layer-group" /> الفئة</span> {formatStudentValue(loggedStudent?.['الفئة'])}</div>
             <div className="info-item"><span className="info-label"><i className="fa-solid fa-check-circle" /> السنة الدراسية</span> {formatStudentValue(loggedStudent?.['السنه الدراسية'])}</div>
+          </div>
+
+          <div className="student-class-manager" style={{ marginTop: 24, padding: '20px 24px', background: '#f8fafc', borderRadius: 16, border: '1px solid #e2e8f0' }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', gap: 12, alignItems: 'center', marginBottom: 16 }}>
+              <h3 style={{ margin: 0, fontSize: 18, color: '#0f172a' }}>تغيير الفئة</h3>
+              <div style={{ color: '#475569', fontSize: 14 }}>
+                {classOptions.length > 0
+                  ? classOptions.filter((item) => item.available !== null && item.available > 0).length
+                  : 0} فئة متاحة حالياً
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+              <select
+                value={selectedClassForUpdate}
+                onChange={(event) => setSelectedClassForUpdate(event.target.value)}
+                style={{ minWidth: 180, padding: '10px 12px', borderRadius: 10, border: '1px solid #cbd5e1', background: '#fff' }}
+              >
+                <option value="">اختر الفئة</option>
+                {classOptions.length > 0 ? classOptions.map((item) => {
+                  const isDisabled = item.available !== null && item.available <= 0;
+                  return (
+                    <option key={item.name} value={item.name} disabled={isDisabled}>
+                      {item.name} {item.available !== null ? `(${item.available} مقعد متاح)` : ''}{isDisabled ? ' - ممتلئة' : ''}
+                    </option>
+                  );
+                }) : (
+                  <option value={String(loggedStudent?.['الفئة'] ?? '')}>{formatStudentValue(loggedStudent?.['الفئة'])}</option>
+                )}
+              </select>
+
+              <button
+                type="button"
+                onClick={() => void handleClassChange()}
+                disabled={isChangingClass || !selectedClassForUpdate || !!classOptions.find((item) => item.name === selectedClassForUpdate)?.available && classOptions.find((item) => item.name === selectedClassForUpdate)?.available === 0}
+                style={{
+                  padding: '10px 18px',
+                  borderRadius: 10,
+                  border: 'none',
+                  background: isChangingClass || !selectedClassForUpdate || !!classOptions.find((item) => item.name === selectedClassForUpdate)?.available && classOptions.find((item) => item.name === selectedClassForUpdate)?.available === 0 ? '#cbd5e1' : '#0f766e',
+                  color: '#fff',
+                  fontWeight: 700,
+                  cursor: isChangingClass || !selectedClassForUpdate || !!classOptions.find((item) => item.name === selectedClassForUpdate)?.available && classOptions.find((item) => item.name === selectedClassForUpdate)?.available === 0 ? 'not-allowed' : 'pointer',
+                }}
+              >
+                {isChangingClass ? 'جاري التحديث...' : 'تغيير الفئة'}
+              </button>
+            </div>
+
+            <div style={{ marginTop: 12, color: '#475569', fontSize: 14 }}>
+              {classOptions.length > 0 && classOptions.find((item) => item.name === selectedClassForUpdate)?.available !== undefined
+                ? `المقاعد المتبقية: ${classOptions.find((item) => item.name === selectedClassForUpdate)?.available ?? 'غير محدد'}`
+                : 'لا توجد معلومات سعة مفعلة لهذا الفصل'}
+            </div>
           </div>
 
           <div className="student-details-grid">
