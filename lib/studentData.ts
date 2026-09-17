@@ -1,23 +1,30 @@
 import { supabase } from './supabase';
 
-export type StudentRow = {
-  id?: number | string;
+export interface Student {
+  id?: string | number;
   'الرقم الجامعي'?: string | number;
-  'كلمة السر'?: string;
   'اسم الطالب'?: string;
-  'اسم الاب'?: string;
-  'الكنية'?: string;
+  'اسم الأب'?: string;
   'القسم'?: string;
-  'رقم الهاتف'?: string;
-  'نوع التسجيل'?: string;
   'ملاحظة'?: string;
   'البريد الإلكتروني'?: string;
   'الفئة'?: string;
+  'تاريخ تغيير الفئة'?: string | null;
+  'تاريخ إنشاء'?: string | null;
+  'السنة الدراسية'?: string | number;
+  class?: string;
+  year?: string;
+}
+
+export type StudentRow = Student & {
+  'اسم الاب'?: string;
+  'كلمة السر'?: string;
+  'الكنية'?: string;
+  'رقم الهاتف'?: string;
+  'نوع التسجيل'?: string;
   'تاريخ_تغيير_الفئة'?: string | null;
   'تاريخ الإنشاء'?: string | null;
   'السنه الدراسية'?: string | number;
-  class?: string;
-  year?: string;
   password?: string;
   name?: string;
   student_id?: string | number;
