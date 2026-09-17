@@ -2015,7 +2015,7 @@ export default function AttendancePage() {
                   <span className="feature-arrow" aria-hidden="true">←</span>
                 </button>
               )}
-              {supervisorFeatures.includes('students') && (
+              {supervisorFeatures.includes('supervisors') && (
                 <button type="button" className="supervisor-feature-card" onClick={() => {
                   setSelectedFeature('students');
                   const stored = JSON.parse(window.localStorage.getItem(supervisorSessionStorageKey) || '{}') as StoredSupervisorSession;
