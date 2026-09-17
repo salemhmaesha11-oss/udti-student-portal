@@ -186,44 +186,128 @@ export default function Home() {
   const [selectedClassForUpdate, setSelectedClassForUpdate] = useState('');
   const [isChangingClass, setIsChangingClass] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [telegramNotificationsEnabled, setTelegramNotificationsEnabled] = useState(true);
+  const [telegramNotificationsEnabled, setTelegramNotificationsEnabled] = useState(false);
+  const [showTelegramSettingsModal, setShowTelegramSettingsModal] = useState(false);
+  const [telegramChatIdInput, setTelegramChatIdInput] = useState('');
   const [capsLockOn, setCapsLockOn] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
 
+  const getStudentTelegramChatId = (student: StudentRow | null | undefined) => {
+    const value = student?.telegram_chat_id ?? student?.['telegram_chat_id'];
+    if (value === undefined || value === null) return '';
+    return String(value).trim();
+  };
+
   const isTelegramEnabled = (value: any): boolean => {
-    if (value === undefined || value === null) return true;
+    if (value === undefined || value === null) return false;
     if (typeof value === 'boolean') return value;
     if (typeof value === 'string') {
-      return value.toLowerCase() === 'true' || value.toLowerCase() === 'yes';
+      const normalized = value.trim().toLowerCase();
+      return normalized === 'true' || normalized === 'yes' || normalized === '1';
     }
     return Boolean(value);
   };
 
   const getStudentTelegramPreference = (student: StudentRow | null | undefined) => {
+    const chatId = getStudentTelegramChatId(student);
     const value = student?.telegram_notifications_enabled ?? student?.['telegram_notifications_enabled'];
-    return isTelegramEnabled(value);
+    return !!chatId && isTelegramEnabled(value);
   };
 
-  const persistTelegramPreference = async (enabled: boolean) => {
+  const persistTelegramPreference = async (enabled: boolean, nextChatId?: string) => {
     const studentId = String(loggedStudent?.['الرقم الجامعي'] ?? '').trim();
     if (!studentId) return;
 
     try {
-      const { error } = await supabase.from('students').update({ telegram_notifications_enabled: enabled }).eq('الرقم الجامعي', studentId);
-      if (!error) {
-        setLoggedStudent((previous) => (
-          previous ? { ...previous, telegram_notifications_enabled: enabled } : previous
-        ));
+      const payload: Record<string, unknown> = {
+        telegram_notifications_enabled: enabled,
+      };
+      if (nextChatId !== undefined) {
+        payload.telegram_chat_id = nextChatId.trim() || null;
+      }
 
-        const nextStudent = {
+      const { error } = await supabase.from('students').update(payload).eq('الرقم الجامعي', studentId);
+      if (!error) {
+        const hydratedStudent = {
           ...(loggedStudent ?? {}),
-          telegram_notifications_enabled: enabled
+          telegram_notifications_enabled: enabled,
+          telegram_chat_id: nextChatId !== undefined ? (nextChatId.trim() || null) : (loggedStudent?.telegram_chat_id ?? loggedStudent?.['telegram_chat_id'] ?? null),
         } as StudentRow;
 
-        window.localStorage.setItem(studentSessionStorageKey, JSON.stringify(nextStudent));
+        setLoggedStudent(hydratedStudent);
+        setTelegramNotificationsEnabled(enabled);
+        window.localStorage.setItem(studentSessionStorageKey, JSON.stringify(hydratedStudent));
       }
     } catch {
       // Ignore DB column mismatch; keep local UI state for active session.
+    }
+  };
+
+  const handleTelegramToggle = async () => {
+    if (telegramNotificationsEnabled) {
+      const studentId = String(loggedStudent?.['الرقم الجامعي'] ?? '').trim();
+      if (!studentId) return;
+
+      try {
+        const { error } = await supabase.from('students').update({ telegram_notifications_enabled: false }).eq('الرقم الجامعي', studentId);
+        if (!error) {
+          setTelegramNotificationsEnabled(false);
+          setLoggedStudent((previous) => (previous ? { ...previous, telegram_notifications_enabled: false } : previous));
+        }
+      } catch {
+        setTelegramNotificationsEnabled(false);
+      }
+      return;
+    }
+
+    const currentChatId = getStudentTelegramChatId(loggedStudent);
+    if (!currentChatId) {
+      setTelegramChatIdInput('');
+      setShowTelegramSettingsModal(true);
+      return;
+    }
+
+    const nextState = true;
+    await persistTelegramPreference(nextState);
+    setToast({ message: 'تم تفعيل تنبيهات التليجرام بنجاح', type: 'success' });
+  };
+
+  const handleTelegramChatIdConfirm = async () => {
+    const cleanedChatId = telegramChatIdInput.trim();
+    if (!cleanedChatId) {
+      setToast({ message: 'يرجى إدخال معرف التلجرام (Chat ID)', type: 'error' });
+      return;
+    }
+
+    const studentId = String(loggedStudent?.['الرقم الجامعي'] ?? '').trim();
+    if (!studentId) return;
+
+    const nextChatId = cleanedChatId.replace(/[^0-9-]/g, '');
+    if (!nextChatId) {
+      setToast({ message: 'معرف التلجرام غير صالح', type: 'error' });
+      return;
+    }
+
+    try {
+      const { error } = await supabase.from('students').update({ telegram_chat_id: nextChatId, telegram_notifications_enabled: true }).eq('الرقم الجامعي', studentId);
+      if (!error) {
+        const updatedStudent = {
+          ...(loggedStudent ?? {}),
+          telegram_chat_id: nextChatId,
+          telegram_notifications_enabled: true,
+        } as StudentRow;
+
+        setLoggedStudent(updatedStudent);
+        setTelegramNotificationsEnabled(true);
+        setShowTelegramSettingsModal(false);
+        setTelegramChatIdInput('');
+        window.localStorage.setItem(studentSessionStorageKey, JSON.stringify(updatedStudent));
+        setToast({ message: 'تم تفعيل التنبيهات وحفظ معرف التلجرام', type: 'success' });
+      } else {
+        setToast({ message: 'تعذر حفظ معرف التلجرام', type: 'error' });
+      }
+    } catch {
+      setToast({ message: 'حدث خطأ أثناء حفظ معرف التلجرام', type: 'error' });
     }
   };
 
@@ -263,8 +347,15 @@ export default function Home() {
       if (!storedStudent) return;
       const student = JSON.parse(storedStudent) as StudentRow;
       if (student?.['الرقم الجامعي']) {
-        setLoggedStudent(student);
-        setTelegramNotificationsEnabled(getStudentTelegramPreference(student));
+        const restoredPreference = getStudentTelegramPreference(student);
+        const restoredStudent = {
+          ...(student as StudentRow),
+          telegram_notifications_enabled: restoredPreference,
+          telegram_chat_id: getStudentTelegramChatId(student) || undefined,
+        } as StudentRow;
+
+        setLoggedStudent(restoredStudent);
+        setTelegramNotificationsEnabled(restoredPreference);
         setIsLoggedIn(true);
         setNotice('تمت استعادة جلسة الطالب.');
       }
@@ -682,12 +773,7 @@ export default function Home() {
                 <span>{telegramNotificationsEnabled ? 'التنبيهات مفعلة' : 'التنبيهات متوقفة'}</span>
                 <button
                   type="button"
-                  onClick={async () => {
-                    const nextValue = !telegramNotificationsEnabled;
-                    setTelegramNotificationsEnabled(nextValue);
-                    await persistTelegramPreference(nextValue);
-                    setToast({ message: nextValue ? 'تم تفعيل تنبيهات التليجرام' : 'تم إيقاف تنبيهات التليجرام', type: 'success' });
-                  }}
+                  onClick={() => void handleTelegramToggle()}
                   style={{
                     position: 'relative',
                     width: 56,
@@ -717,6 +803,46 @@ export default function Home() {
                 </button>
               </div>
             </div>
+
+            {showTelegramSettingsModal && (
+              <div style={{ gridColumn: '1 / -1', background: '#f8fafc', border: '1px solid #dbeafe', borderRadius: 14, padding: 20 }}>
+                <div style={{ fontSize: 20, fontWeight: 800, marginBottom: 8 }}>تفعيل تنبيهات التلجرام 🔔</div>
+                <div style={{ color: '#475569', lineHeight: 1.8, marginBottom: 12 }}>
+                  لتلقي التنبيهات على حسابك الشخصي، يرجى إدخال معرف التلجرام (Chat ID).
+                </div>
+                <a
+                  href="https://t.me/userinfobot"
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{ display: 'inline-block', marginBottom: 12, padding: '10px 14px', background: '#2563eb', color: '#fff', borderRadius: 10, textDecoration: 'none', fontWeight: 700 }}
+                >
+                  احصل على الـ ID الخاص بك من التلجرام
+                </a>
+                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <input
+                    type="text"
+                    value={telegramChatIdInput}
+                    onChange={(event) => setTelegramChatIdInput(event.target.value)}
+                    placeholder="ادخل رقم الـ Chat ID"
+                    style={{ flex: 1, minWidth: 180, padding: '10px 12px', borderRadius: 10, border: '1px solid #cbd5e1' }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void handleTelegramChatIdConfirm()}
+                    style={{ padding: '10px 16px', borderRadius: 10, border: 'none', background: '#0f766e', color: '#fff', fontWeight: 700 }}
+                  >
+                    تأكيد وحفظ
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowTelegramSettingsModal(false)}
+                    style={{ padding: '10px 16px', borderRadius: 10, border: '1px solid #cbd5e1', background: '#fff', color: '#0f172a', fontWeight: 700 }}
+                  >
+                    إغلاق
+                  </button>
+                </div>
+              </div>
+            )}
             <div className="detail-item">
               <div className="detail-label">رقم الهاتف</div>
               <div className="detail-value">{formatStudentValue(loggedStudent?.['رقم الهاتف'])}</div>

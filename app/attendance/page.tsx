@@ -23,6 +23,7 @@ type StudentRow = {
   'تاريخ_تغيير_الفئة'?: string | null;
   'تاريخ الإنشاء'?: string | null;
   'السنه الدراسية'?: string | number;
+  'telegram_chat_id'?: string | number | null;
   'telegram_notifications_enabled'?: boolean | string;
   class?: string;
   year?: string;
@@ -1752,13 +1753,14 @@ export default function AttendancePage() {
     const studentYear = normalizeText(student['السنه الدراسية']);
     const studentClass = normalizeText(student['الفئة']) !== 'غير متوفر' ? normalizeText(student['الفئة']) : 'بدون فئة';
     const studentId = getStudentIdentifier(student) || 'غير محدد';
-    const notificationEnabled = student.telegram_notifications_enabled ?? student['telegram_notifications_enabled'] ?? true;
+    const notificationEnabled = student.telegram_notifications_enabled ?? student['telegram_notifications_enabled'] ?? false;
     const isNotificationEnabled = typeof notificationEnabled === 'string'
-      ? notificationEnabled === 'true' || notificationEnabled === '1' || notificationEnabled.toLowerCase() === 'yes'
+      ? notificationEnabled.toLowerCase() === 'true' || notificationEnabled === '1' || notificationEnabled.toLowerCase() === 'yes'
       : Boolean(notificationEnabled);
+    const chatId = String(student.telegram_chat_id ?? student['telegram_chat_id'] ?? '').trim();
 
-    if (!isNotificationEnabled) {
-      setNotice(`تم إيقاف تنبيهات التليجرام لهذا الطالب (${studentName}).`);
+    if (!isNotificationEnabled || !chatId) {
+      setNotice(`تم إيقاف تنبيهات التليجرام لهذا الطالب (${studentName}) أو لا يوجد له Chat ID.`);
       return;
     }
 
@@ -1771,7 +1773,7 @@ export default function AttendancePage() {
     });
 
     try {
-      const result = await sendTelegramNotification(message);
+      const result = await sendTelegramNotification(message, { chatId, enabled: isNotificationEnabled });
       if (result && result.ok !== false) {
         setNotice(`تم إرسال تنبيه الطالب ${studentName} إلى التليجرام بنجاح.`);
       } else {

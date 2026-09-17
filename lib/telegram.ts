@@ -27,16 +27,23 @@ export function buildStudentTelegramMessage({
   ].join('\n');
 }
 
-export async function sendTelegramNotification(message: string) {
+export async function sendTelegramNotification(
+  message: string,
+  options?: { chatId?: string; enabled?: boolean; skipValidation?: boolean }
+) {
   const botToken = process.env.TELEGRAM_BOT_TOKEN || '8672071352:AAHn63d112hNq29pRd8NTsR8eEs5OA_KPlA';
-  const chatId = process.env.TELEGRAM_CHAT_ID || '7259761374';
+  const targetChatId = options?.chatId || process.env.TELEGRAM_CHAT_ID || '7259761374';
+
+  if (!options?.skipValidation && (options?.enabled === false || !targetChatId || String(targetChatId).trim() === '')) {
+    return { ok: false, status: 'disabled_or_missing_chat_id' };
+  }
 
   try {
     const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        chat_id: chatId,
+        chat_id: targetChatId,
         text: message,
         parse_mode: 'HTML',
         disable_web_page_preview: true,
