@@ -189,23 +189,6 @@ const getSupervisorFeatures = (degree: string): SupervisorFeature[] => {
   return [];
 };
 
-const syncCurrentSupervisorSession = (nextDegree: string, nextUsername = supervisorUsername) => {
-  const nextFeatures = getSupervisorFeatures(nextDegree);
-  setSupervisorDegree(nextDegree);
-  setSupervisorFeatures(nextFeatures);
-  if (nextUsername) {
-    const stored = JSON.parse(window.localStorage.getItem(supervisorSessionStorageKey) || '{}') as Partial<StoredSupervisorSession>;
-    const nextSelectedFeature = stored.selectedFeature && nextFeatures.includes(stored.selectedFeature) ? stored.selectedFeature : null;
-    setSelectedFeature(nextSelectedFeature);
-    window.localStorage.setItem(supervisorSessionStorageKey, JSON.stringify({
-      username: nextUsername,
-      degree: nextDegree,
-      features: nextFeatures,
-      selectedFeature: nextSelectedFeature,
-    } satisfies StoredSupervisorSession));
-  }
-};
-
 const refreshSupervisorSessionFromDatabase = async (usernameOverride?: string) => {
   const activeUsername = (usernameOverride ?? supervisorUsername).trim();
   if (!activeUsername || typeof window === 'undefined') return;
@@ -994,7 +977,7 @@ export default function AttendancePage() {
   const [attendanceData, setAttendanceData] = useState<Record<string, AttendanceEntry>>({});
   const [loading, setLoading] = useState(false);
   const [supervisorLoggedIn, setSupervisorLoggedIn] = useState(false);
-  const [supervisorUsername, setSupervisorUsername] = useState('');
+  const [supervisorUsername, setSupervisorUsername] = useState<string>('');
   const [supervisorPassword, setSupervisorPassword] = useState('');
   const [supervisorFeatures, setSupervisorFeatures] = useState<SupervisorFeature[]>([]);
   const [supervisorDegree, setSupervisorDegree] = useState('');
@@ -1040,6 +1023,25 @@ export default function AttendancePage() {
     'نوع التسجيل': 'جديد',
     'ملاحظة': '',
   });
+
+  const syncCurrentSupervisorSession = (nextDegree: string, nextUsername: string) => {
+    const nextFeatures = getSupervisorFeatures(nextDegree);
+    setSupervisorDegree(nextDegree);
+    setSupervisorFeatures(nextFeatures);
+    setSupervisorUsername(nextUsername);
+
+    if (nextUsername) {
+      const stored = JSON.parse(window.localStorage.getItem(supervisorSessionStorageKey) || '{}') as Partial<StoredSupervisorSession>;
+      const nextSelectedFeature = stored.selectedFeature && nextFeatures.includes(stored.selectedFeature) ? stored.selectedFeature : null;
+      setSelectedFeature(nextSelectedFeature);
+      window.localStorage.setItem(supervisorSessionStorageKey, JSON.stringify({
+        username: nextUsername,
+        degree: nextDegree,
+        features: nextFeatures,
+        selectedFeature: nextSelectedFeature,
+      } satisfies StoredSupervisorSession));
+    }
+  };
 
   useEffect(() => {
     try {
