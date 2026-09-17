@@ -12,7 +12,7 @@ import {
   StudentRow,
 } from '../lib/studentData';
 
-type TabKey = 'grades' | 'record' | 'status' | 'schedule';
+type TabKey = 'grades' | 'record' | 'status';
 
 type GradeEntry = {
   subject: string;
@@ -180,7 +180,6 @@ export default function Home() {
     { key: 'grades', label: 'العلامات' },
     { key: 'record', label: 'السجل' },
     { key: 'status', label: 'الحالة' },
-    { key: 'schedule', label: 'الدوام' },
   ] as const;
 
   useEffect(() => {
@@ -192,7 +191,7 @@ export default function Home() {
       const [attendanceResult, warningsResult, gradesResult, statusResult] = await Promise.all([
         getAttendanceForStudent(studentId).then((rows) => ({ data: rows })),
         getWarningsForStudent(studentId).then((rows) => ({ data: rows })),
-        getTableRows(['أعمال_السنة', 'annual_works', 'works', 'student_works']).then(({ data }) => ({
+        getTableRows(['الاعمال', 'الأعمال', 'أعمال', 'العملي', 'النظري']).then(({ data }) => ({
           data: Array.isArray(data) ? data.filter((row) => {
             const rowRecord = row as unknown as Record<string, unknown>;
             const rowStudentId = getValueByKeys(rowRecord, ['الرقم الجامعي', 'student_id', 'studentId']);
@@ -474,11 +473,10 @@ export default function Home() {
                     {warnings.map((warning, index) => (
                       <div key={`${warning['الرقم الجامعي'] ?? 'warning'}-${index}`} className="warning-item">
                         <div className="warning-header">
-                          <strong>{normalizeText(getValueByKeys(warning, ['نوع الإنذار', 'warning_type', 'نوع_الانذار']))}</strong>
-                          <span className="warning-type">{normalizeText(getValueByKeys(warning, ['السبب', 'reason']))}</span>
+                          <strong>{normalizeText(getValueByKeys(warning, ['نوع الإنذار']))}</strong>
+                          <span className="warning-type">{normalizeText(getValueByKeys(warning, ['السبب']))}</span>
                         </div>
-                        <div className="warning-date">{formatDate(String(getValueByKeys(warning, ['التاريخ', 'date', 'created_at']) ?? ''))}</div>
-                        <div className="warning-reason">{normalizeText(getValueByKeys(warning, ['التفاصيل', 'details', 'description']))}</div>
+                        <div className="warning-reason">{normalizeText(getValueByKeys(warning, ['التفاصيل']))}</div>
                       </div>
                     ))}
                   </div>
@@ -508,22 +506,6 @@ export default function Home() {
               </div>
             )}
 
-            {activeTab === 'schedule' && (
-              <div className="tab-content active">
-                <div className="attendance-box">
-                  <h3>نظام الحضور والغياب</h3>
-                  <div className="attendance-list">
-                    {attendanceSummary.map((item) => (
-                      <div key={item.label} className="attendance-row">
-                        <span className={`attendance-dot ${item.tone}`} />
-                        <span>{item.label}</span>
-                        <strong>{item.value}</strong>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
           </div>
 
           <div className="last-updated">آخر تحديث للنظام: {formatDate(loggedStudent?.['تاريخ_تغيير_الفئة'])}</div>
