@@ -1391,6 +1391,30 @@ tr:nth-child(even) td {
   cursor: pointer;
 }
 
+.admin-supervisor-form {
+  display: grid;
+  grid-template-columns: 1.2fr 1.2fr 0.7fr auto auto;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.admin-supervisor-form input,
+.admin-supervisor-form select {
+  min-height: 46px;
+  border: 1px solid #d6e3dd;
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: #fbfdfc;
+  color: #294e47;
+  font-family: inherit;
+}
+
+@media (max-width: 760px) {
+  .admin-supervisor-form {
+    grid-template-columns: 1fr;
+  }
+}
+
 .admin-student-picker {
   display: grid;
   gap: 8px;

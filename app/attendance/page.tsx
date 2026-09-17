@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '../../lib/supabase';
+import { writeAuditLog } from '../../lib/auditLog';
 
 type StudentRow = {
   id?: number | string;
@@ -17,7 +18,7 @@ type StudentRow = {
 };
 
 type AttendanceStatus = 'pending' | 'present' | 'absent';
-type SupervisorFeature = 'attendance' | 'admin';
+type SupervisorFeature = 'attendance' | 'admin' | 'supervisors' | 'logs';
 type AdminRecord = Record<string, unknown>;
 
 type AttendanceEntry = {
@@ -79,6 +80,14 @@ const pendingAttendanceStorageKey = 'udti-pending-attendance-jobs';
 const studentCacheStorageKey = 'udti-attendance-student-cache';
 const localSessionLockKey = 'udti-active-attendance-session';
 const recentSessionWindowMs = 60 * 60 * 1000;
+const supervisorSessionStorageKey = 'udti-supervisor-session';
+
+type StoredSupervisorSession = {
+  username: string;
+  degree: string;
+  features: SupervisorFeature[];
+  selectedFeature?: SupervisorFeature | null;
+};
 
 const normalizeText = (value: unknown) => {
   if (value === null || value === undefined || value === '') return 'غير متوفر';
@@ -103,7 +112,7 @@ const getSupervisorDegree = (row: Record<string, unknown>) => {
 };
 
 const getSupervisorFeatures = (degree: string): SupervisorFeature[] => {
-  if (degree === '1') return ['admin', 'attendance'];
+  if (degree === '1') return ['admin', 'attendance', 'supervisors', 'logs'];
   if (['2', '3'].includes(degree)) return ['attendance'];
   return [];
 };
@@ -170,15 +179,23 @@ const loadAdminRecords = async () => {
     warnings: Array.isArray(warningsResult.data) ? warningsResult.data as AdminRecord[] : [],
     studentNames,
     supervisors: !supervisorsResult.error && Array.isArray(supervisorsResult.data)
-      ? (supervisorsResult.data as AdminRecord[]).map((row) => ({
-        username: getSupervisorCredentials(row).username,
-        degree: getSupervisorDegree(row),
-      }))
+      ? supervisorsResult.data as AdminRecord[]
       : [],
     supervisorWarnings: !supervisorWarningsResult.error && Array.isArray(supervisorWarningsResult.data)
       ? supervisorWarningsResult.data as AdminRecord[]
       : [],
+    auditLogs: [],
   };
+};
+
+const loadAuditLogs = async () => {
+  const { data, error } = await supabase
+    .from('سجلات النظام')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(300);
+  if (error) throw error;
+  return Array.isArray(data) ? data as AdminRecord[] : [];
 };
 
 const insertAdminAttendance = async (warning: AdminRecord, supervisor: string) => {
@@ -246,6 +263,52 @@ const createSupervisorWarning = async (username: string, degree: string, details
     'التاريخ': new Date().toISOString().split('T')[0],
     'الوقت': new Date().toLocaleTimeString('en-GB', { hour12: false }),
   }]);
+  return error ? { success: false, error: error.message } : { success: true };
+};
+
+const supervisorIdCandidates = ['id', 'supervisor_id', 'معرف المشرف', 'رقم المشرف'];
+
+const getSupervisorRecordId = (row: AdminRecord) => {
+  const key = supervisorIdCandidates.find((candidate) => row[candidate] !== undefined && row[candidate] !== null && row[candidate] !== '');
+  return key ? String(row[key]).trim() : '';
+};
+
+const getSupervisorFieldKey = (row: AdminRecord, kind: 'username' | 'password' | 'degree') => {
+  const candidates = kind === 'username'
+    ? ['اسم المستخدم', 'username', 'اسم_المستخدم', 'user_name']
+    : kind === 'password'
+      ? ['كلمة المرور', 'password', 'كلمة_المرور', 'pass']
+      : ['الدرجة', 'degree', 'درجه', 'rank'];
+  return candidates.find((candidate) => candidate in row) ?? candidates[0];
+};
+
+const createSupervisorRecord = async (username: string, password: string, degree: string) => {
+  const { error } = await supabase.from('المشرفين').insert([{
+    'اسم المستخدم': username,
+    'كلمة المرور': password,
+    'الدرجة': degree,
+  }]);
+  return error ? { success: false, error: error.message } : { success: true };
+};
+
+const updateSupervisorRecord = async (row: AdminRecord, values: { username: string; password: string; degree: string }) => {
+  const id = getSupervisorRecordId(row);
+  if (!id) return { success: false, error: 'لا يوجد معرف لهذا المشرف' };
+  const updates: AdminRecord = {
+    [getSupervisorFieldKey(row, 'username')]: values.username,
+    [getSupervisorFieldKey(row, 'degree')]: values.degree,
+  };
+  if (values.password.trim()) updates[getSupervisorFieldKey(row, 'password')] = values.password;
+  const idKey = supervisorIdCandidates.find((candidate) => String(row[candidate] ?? '') === id) ?? 'id';
+  const { error } = await supabase.from('المشرفين').update(updates).eq(idKey, id);
+  return error ? { success: false, error: error.message } : { success: true };
+};
+
+const deleteSupervisorRecord = async (row: AdminRecord) => {
+  const id = getSupervisorRecordId(row);
+  if (!id) return { success: false, error: 'لا يوجد معرف لهذا المشرف' };
+  const idKey = supervisorIdCandidates.find((candidate) => String(row[candidate] ?? '') === id) ?? 'id';
+  const { error } = await supabase.from('المشرفين').delete().eq(idKey, id);
   return error ? { success: false, error: error.message } : { success: true };
 };
 
@@ -720,8 +783,12 @@ export default function AttendancePage() {
   const [adminAttendance, setAdminAttendance] = useState<AdminRecord[]>([]);
   const [adminWarnings, setAdminWarnings] = useState<AdminRecord[]>([]);
   const [adminStudentNames, setAdminStudentNames] = useState<Record<string, string>>({});
-  const [adminSupervisors, setAdminSupervisors] = useState<{ username: string; degree: string }[]>([]);
+  const [adminSupervisors, setAdminSupervisors] = useState<AdminRecord[]>([]);
   const [adminSupervisorWarnings, setAdminSupervisorWarnings] = useState<AdminRecord[]>([]);
+  const [supervisorRecords, setSupervisorRecords] = useState<AdminRecord[]>([]);
+  const [auditLogs, setAuditLogs] = useState<AdminRecord[]>([]);
+  const [supervisorForm, setSupervisorForm] = useState({ username: '', password: '', degree: '3' });
+  const [editingSupervisorId, setEditingSupervisorId] = useState('');
   const [adminLoading, setAdminLoading] = useState(false);
   const [adminSearch, setAdminSearch] = useState('');
   const [adminCourseFilter, setAdminCourseFilter] = useState('');
@@ -729,6 +796,24 @@ export default function AttendancePage() {
   const [adminDateTo, setAdminDateTo] = useState('');
   const [adminRecordType, setAdminRecordType] = useState<'all' | 'attendance' | 'warnings'>('all');
   const [selectedAdminStudentId, setSelectedAdminStudentId] = useState('');
+
+  useEffect(() => {
+    try {
+      const storedSupervisor = window.localStorage.getItem(supervisorSessionStorageKey);
+      if (!storedSupervisor) return;
+      const session = JSON.parse(storedSupervisor) as StoredSupervisorSession;
+      if (session?.username && Array.isArray(session.features)) {
+        setSupervisorUsername(session.username);
+        setSupervisorDegree(session.degree || '');
+        setSupervisorFeatures(session.features);
+        setSelectedFeature(session.selectedFeature ?? null);
+        setSupervisorLoggedIn(true);
+        setNotice('تمت استعادة جلسة المشرف. اختر الوظيفة للمتابعة.');
+      }
+    } catch {
+      window.localStorage.removeItem(supervisorSessionStorageKey);
+    }
+  }, []);
 
   useEffect(() => {
     const syncPendingAttendance = async () => {
@@ -761,8 +846,20 @@ export default function AttendancePage() {
       setAdminStudentNames(records.studentNames);
       setAdminSupervisors(records.supervisors);
       setAdminSupervisorWarnings(records.supervisorWarnings);
+      setSupervisorRecords(records.supervisors);
     } catch (error) {
       setNotice(`تعذر تحميل بيانات لوحة الإدارة: ${getSupabaseErrorText(error)}`);
+    } finally {
+      setAdminLoading(false);
+    }
+  };
+
+  const refreshAuditLogs = async () => {
+    setAdminLoading(true);
+    try {
+      setAuditLogs(await loadAuditLogs());
+    } catch (error) {
+      setNotice(`تعذر تحميل سجلات النظام: ${getSupabaseErrorText(error)}`);
     } finally {
       setAdminLoading(false);
     }
@@ -828,6 +925,12 @@ export default function AttendancePage() {
       setNotice(`تم تسجيل الحضور، لكن تعذر حذف الإنذار: ${deleteResult.error}`);
     } else {
       setNotice('تم تحويل الإنذار إلى سجل حضور بنجاح.');
+      writeAuditLog({
+        action: 'warning_to_attendance',
+        userType: 'supervisor',
+        username: supervisorUsername,
+        details: { studentId: getAdminRecordValue(warning, ['الرقم الجامعي']), warningId: getAdminRecordId(warning) },
+      });
     }
     await refreshAdminData();
   };
@@ -836,6 +939,12 @@ export default function AttendancePage() {
     if (!window.confirm('هل تريد حذف هذا الإنذار نهائيًا؟')) return;
     setAdminLoading(true);
     const result = await deleteAdminWarning(warning);
+    writeAuditLog({
+      action: 'warning_deleted',
+      userType: 'supervisor',
+      username: supervisorUsername,
+      details: { studentId: getAdminRecordValue(warning, ['الرقم الجامعي']), warningId: getAdminRecordId(warning) },
+    });
     setNotice(result.success ? 'تم حذف الإنذار بنجاح.' : `تعذر حذف الإنذار: ${result.error}`);
     await refreshAdminData();
   };
@@ -843,6 +952,12 @@ export default function AttendancePage() {
   const handleWarningDetails = async (warning: AdminRecord, details: string) => {
     setAdminLoading(true);
     const result = await updateAdminWarning(warning, details);
+    writeAuditLog({
+      action: 'warning_updated',
+      userType: 'supervisor',
+      username: supervisorUsername,
+      details: { studentId: getAdminRecordValue(warning, ['الرقم الجامعي']), warningId: getAdminRecordId(warning), details },
+    });
     setNotice(result.success ? 'تم تحديث تفاصيل الغياب.' : `تعذر تحديث الإنذار: ${result.error}`);
     await refreshAdminData();
   };
@@ -850,6 +965,12 @@ export default function AttendancePage() {
   const handleAttendanceStatus = async (record: AdminRecord, status: 'حاضر' | 'غائب', details = '') => {
     setAdminLoading(true);
     const result = await updateAdminAttendance(record, status, details);
+    writeAuditLog({
+      action: 'attendance_updated',
+      userType: 'supervisor',
+      username: supervisorUsername,
+      details: { studentId: getAdminRecordValue(record, ['الرقم الجامعي']), status },
+    });
     setNotice(result.success ? 'تم تحديث حالة الحضور.' : `تعذر تحديث سجل الحضور: ${result.error}`);
     await refreshAdminData();
   };
@@ -859,7 +980,45 @@ export default function AttendancePage() {
     if (!details?.trim()) return;
     setAdminLoading(true);
     const result = await createSupervisorWarning(username, degree, details.trim(), supervisorUsername);
+    writeAuditLog({
+      action: 'supervisor_warning_created',
+      userType: 'supervisor',
+      username: supervisorUsername,
+      details: { targetUsername: username, targetDegree: degree, warningDetails: details.trim() },
+    });
     setNotice(result.success ? 'تم تسجيل إنذار المشرف.' : `تعذر تسجيل إنذار المشرف: ${result.error}`);
+    await refreshAdminData();
+  };
+
+  const handleSupervisorFormSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!supervisorForm.username.trim() || (!editingSupervisorId && !supervisorForm.password.trim())) {
+      setNotice('أدخل اسم المستخدم وكلمة المرور للمشرف الجديد.');
+      return;
+    }
+    setAdminLoading(true);
+    const current = supervisorRecords.find((row) => getSupervisorRecordId(row) === editingSupervisorId);
+    const result = current
+      ? await updateSupervisorRecord(current, supervisorForm)
+      : await createSupervisorRecord(supervisorForm.username.trim(), supervisorForm.password.trim(), supervisorForm.degree);
+    writeAuditLog({
+      action: current ? 'supervisor_updated' : 'supervisor_created',
+      userType: 'supervisor',
+      username: supervisorUsername,
+      details: { targetUsername: supervisorForm.username.trim(), targetDegree: supervisorForm.degree },
+    });
+    setNotice(result.success ? 'تم حفظ بيانات المشرف.' : `تعذر حفظ المشرف: ${result.error}`);
+    setSupervisorForm({ username: '', password: '', degree: '3' });
+    setEditingSupervisorId('');
+    await refreshAdminData();
+  };
+
+  const handleSupervisorDelete = async (row: AdminRecord) => {
+    if (!window.confirm('هل تريد حذف حساب المشرف نهائيًا؟')) return;
+    setAdminLoading(true);
+    const result = await deleteSupervisorRecord(row);
+    writeAuditLog({ action: 'supervisor_deleted', userType: 'supervisor', username: supervisorUsername, details: { targetUsername: getSupervisorCredentials(row).username, targetDegree: getSupervisorDegree(row) } });
+    setNotice(result.success ? 'تم حذف المشرف.' : `تعذر حذف المشرف: ${result.error}`);
     await refreshAdminData();
   };
 
@@ -905,6 +1064,18 @@ export default function AttendancePage() {
       setSupervisorLoggedIn(true);
       setSupervisorFeatures(features);
       setSupervisorDegree(getSupervisorDegree(row));
+      window.localStorage.setItem(supervisorSessionStorageKey, JSON.stringify({
+        username,
+        degree: getSupervisorDegree(row),
+        features,
+        selectedFeature: null,
+      } satisfies StoredSupervisorSession));
+      writeAuditLog({
+        action: 'supervisor_login',
+        userType: 'supervisor',
+        username,
+        details: { degree: getSupervisorDegree(row), features },
+      });
       setSelectedFeature(null);
       setNotice('تم تسجيل الدخول بأمان. اختر الوظيفة المطلوبة للمتابعة.');
     } catch (error) {
@@ -999,6 +1170,12 @@ export default function AttendancePage() {
       setSessionActive(true);
       setActiveSession(created.session);
       setRecentSessions([created.session, ...currentSessions]);
+      writeAuditLog({
+        action: 'attendance_session_started',
+        userType: 'supervisor',
+        username: supervisorUsername,
+        details: { course: selectedCourse, classValue: selectedClass, year: selectedYear, studentCount: rows.length },
+      });
       setNotice(`تم بدء جلسة الحضور للفئة ${selectedClass} في مادة ${selectedCourse}`);
     } catch (error) {
       if (openedSessionId) await closeAttendanceSession(openedSessionId);
@@ -1032,6 +1209,12 @@ export default function AttendancePage() {
     }));
 
     setNotice(`تم تسجيل حالة الطالب ${getFullStudentName(student)} محلياً. اضغط حفظ الجلسة للمزامنة.`);
+    writeAuditLog({
+      action: 'attendance_status_selected',
+      userType: 'supervisor',
+      username: supervisorUsername,
+      details: { studentId, studentName: getFullStudentName(student), status, course: selectedCourse, classValue: selectedClass },
+    });
   };
 
   const resetSession = () => {
@@ -1138,6 +1321,12 @@ export default function AttendancePage() {
         setAttendanceData({});
         await refreshRecentSessions();
       }
+      writeAuditLog({
+        action: 'attendance_session_saved',
+        userType: 'supervisor',
+        username: supervisorUsername,
+        details: { course: selectedCourse, classValue: selectedClass, savedRecords, savedWarnings, failedJobs: failedJobs.length },
+      });
     } catch (error) {
       console.error('[attendance][saveSession] fatal save error:', error);
       setNotice('حدث خطأ أثناء حفظ بيانات الحضور');
@@ -1161,6 +1350,8 @@ export default function AttendancePage() {
               className="back-link"
               onClick={() => {
                 if (activeSession) void closeAttendanceSession(activeSession.id);
+                writeAuditLog({ action: 'supervisor_logout', userType: 'supervisor', username: supervisorUsername });
+                window.localStorage.removeItem(supervisorSessionStorageKey);
                 setSupervisorLoggedIn(false);
                 setSupervisorUsername('');
                 setSupervisorPassword('');
@@ -1237,6 +1428,9 @@ export default function AttendancePage() {
                   className="supervisor-feature-card"
                   onClick={() => {
                     setSelectedFeature('attendance');
+                    const stored = JSON.parse(window.localStorage.getItem(supervisorSessionStorageKey) || '{}') as StoredSupervisorSession;
+                    window.localStorage.setItem(supervisorSessionStorageKey, JSON.stringify({ ...stored, selectedFeature: 'attendance' }));
+                    writeAuditLog({ action: 'feature_opened', userType: 'supervisor', username: supervisorUsername, details: { feature: 'attendance' } });
                     setNotice('تم فتح وظيفة تسجيل الحضور والغياب.');
                   }}
                 >
@@ -1254,6 +1448,9 @@ export default function AttendancePage() {
                   className="supervisor-feature-card"
                   onClick={() => {
                     setSelectedFeature('admin');
+                    const stored = JSON.parse(window.localStorage.getItem(supervisorSessionStorageKey) || '{}') as StoredSupervisorSession;
+                    window.localStorage.setItem(supervisorSessionStorageKey, JSON.stringify({ ...stored, selectedFeature: 'admin' }));
+                    writeAuditLog({ action: 'feature_opened', userType: 'supervisor', username: supervisorUsername, details: { feature: 'admin' } });
                     void refreshAdminData();
                     setNotice('تم فتح لوحة الإدارة للدرجة الأولى.');
                   }}
@@ -1263,6 +1460,32 @@ export default function AttendancePage() {
                     <strong>لوحة إدارة الحضور والإنذارات</strong>
                     <small>بحث وتصفية وتعديل سجلات الطلاب بالكامل</small>
                   </span>
+                  <span className="feature-arrow" aria-hidden="true">←</span>
+                </button>
+              )}
+              {supervisorFeatures.includes('supervisors') && (
+                <button type="button" className="supervisor-feature-card" onClick={() => {
+                  setSelectedFeature('supervisors');
+                  const stored = JSON.parse(window.localStorage.getItem(supervisorSessionStorageKey) || '{}') as StoredSupervisorSession;
+                  window.localStorage.setItem(supervisorSessionStorageKey, JSON.stringify({ ...stored, selectedFeature: 'supervisors' }));
+                  void refreshAdminData();
+                  writeAuditLog({ action: 'feature_opened', userType: 'supervisor', username: supervisorUsername, details: { feature: 'supervisors' } });
+                }}>
+                  <span className="feature-icon" aria-hidden="true">+</span>
+                  <span><strong>إدارة المشرفين</strong><small>إضافة وتعديل وحذف وترقية وخفض الحسابات</small></span>
+                  <span className="feature-arrow" aria-hidden="true">←</span>
+                </button>
+              )}
+              {supervisorFeatures.includes('logs') && (
+                <button type="button" className="supervisor-feature-card" onClick={() => {
+                  setSelectedFeature('logs');
+                  const stored = JSON.parse(window.localStorage.getItem(supervisorSessionStorageKey) || '{}') as StoredSupervisorSession;
+                  window.localStorage.setItem(supervisorSessionStorageKey, JSON.stringify({ ...stored, selectedFeature: 'logs' }));
+                  void refreshAuditLogs();
+                  writeAuditLog({ action: 'feature_opened', userType: 'supervisor', username: supervisorUsername, details: { feature: 'logs' } });
+                }}>
+                  <span className="feature-icon" aria-hidden="true">≡</span>
+                  <span><strong>سجلات النظام</strong><small>متابعة حركات الطلاب والمشرفين والعمليات</small></span>
                   <span className="feature-arrow" aria-hidden="true">←</span>
                 </button>
               )}
@@ -1327,13 +1550,17 @@ export default function AttendancePage() {
                 <span>لا تظهر كلمات المرور أو أي بيانات سرية</span>
               </div>
               <div className="admin-supervisor-list">
-                {adminSupervisors.filter((supervisor) => supervisor.degree !== '1').map((supervisor) => (
-                  <div className="admin-supervisor-item" key={`${supervisor.username}-${supervisor.degree}`}>
-                    <strong>{supervisor.username || 'مشرف'}</strong>
-                    <span>الدرجة {supervisor.degree}</span>
-                    <button type="button" onClick={() => void handleSupervisorWarning(supervisor.username, supervisor.degree)}>إعطاء إنذار</button>
+                {adminSupervisors.filter((supervisor) => getSupervisorDegree(supervisor) !== '1').map((supervisor, index) => {
+                  const credentials = getSupervisorCredentials(supervisor);
+                  const username = String(credentials.username || 'مشرف');
+                  const degree = String(getSupervisorDegree(supervisor) || 'غير محدد');
+                  return (
+                  <div className="admin-supervisor-item" key={`${username}-${degree}-${index}`}>
+                    <strong>{username}</strong>
+                    <span>الدرجة {degree}</span>
+                    <button type="button" onClick={() => void handleSupervisorWarning(username, degree)}>إعطاء إنذار</button>
                   </div>
-                ))}
+                ); })}
                 {adminSupervisors.filter((supervisor) => supervisor.degree !== '1').length === 0 && <span>لا توجد حسابات مشرفين أدنى مسجلة.</span>}
               </div>
               {adminSupervisorWarnings.length > 0 && (
@@ -1391,6 +1618,30 @@ export default function AttendancePage() {
             {(adminRecordType === 'all' || adminRecordType === 'warnings') && (
               <div className="admin-table-section"><h2>آخر الإنذارات</h2><div className="admin-record-list">{filteredAdminWarnings.slice(0, 50).map((warning, index) => <div className="admin-record-item warning-record" key={`${getAdminRecordId(warning)}-${index}`}><strong>{getAdminStudentName(warning)}</strong><span>{getAdminRecordCourse(warning)} - {getAdminRecordDate(warning)}</span><span>المشرف: {getAdminRecordSupervisor(warning)} - {String(getAdminRecordValue(warning, ['الوقت', 'time']) || '')}</span><div className="admin-record-actions"><button type="button" onClick={() => setSelectedAdminStudentId(String(getAdminRecordValue(warning, ['الرقم الجامعي', 'student_id', 'studentId'])))}>تفاصيل</button><button type="button" onClick={() => void handleWarningToAttendance(warning)}>تحويل لحضور</button><button type="button" className="danger" onClick={() => void handleDeleteWarning(warning)}>حذف</button></div></div>)}</div></div>
             )}
+          </section>
+        )}
+
+        {supervisorLoggedIn && selectedFeature === 'supervisors' && (
+          <section className="admin-dashboard-panel">
+            <div className="admin-dashboard-heading"><div><span className="feature-panel-kicker">إدارة الحسابات</span><h1>إدارة المشرفين</h1><p>يمكن للدرجة الأولى إنشاء الحسابات وتغيير الدرجات وكلمات المرور.</p></div><button type="button" className="action-button primary" onClick={() => void refreshAdminData()}>تحديث</button></div>
+            <form className="admin-supervisor-form" onSubmit={handleSupervisorFormSubmit}>
+              <input value={supervisorForm.username} onChange={(event) => setSupervisorForm({ ...supervisorForm, username: event.target.value })} placeholder="اسم المستخدم" required />
+              <input value={supervisorForm.password} onChange={(event) => setSupervisorForm({ ...supervisorForm, password: event.target.value })} placeholder={editingSupervisorId ? 'كلمة مرور جديدة (اختياري)' : 'كلمة المرور'} type="password" required={!editingSupervisorId} />
+              <select value={supervisorForm.degree} onChange={(event) => setSupervisorForm({ ...supervisorForm, degree: event.target.value })}><option value="1">الدرجة 1</option><option value="2">الدرجة 2</option><option value="3">الدرجة 3</option></select>
+              <button type="submit" className="action-button primary">{editingSupervisorId ? 'حفظ التعديل' : 'إضافة مشرف'}</button>
+              {editingSupervisorId && <button type="button" className="action-button warning" onClick={() => { setEditingSupervisorId(''); setSupervisorForm({ username: '', password: '', degree: '3' }); }}>إلغاء</button>}
+            </form>
+            <div className="admin-record-list">
+              {supervisorRecords.map((row, index) => { const credentials = getSupervisorCredentials(row); const id = getSupervisorRecordId(row); const username = String(credentials.username || 'مشرف'); const degree = String(getSupervisorDegree(row) || 'غير محدد'); return <div className="admin-supervisor-item" key={`${id || username}-${index}`}><strong>{username}</strong><span>الدرجة {degree}</span><button type="button" onClick={() => { setEditingSupervisorId(id); setSupervisorForm({ username, password: '', degree: degree === 'غير محدد' ? '3' : degree }); }}>تعديل</button><button type="button" onClick={() => void handleSupervisorDelete(row)}>حذف</button></div>; })}
+            </div>
+          </section>
+        )}
+
+        {supervisorLoggedIn && selectedFeature === 'logs' && (
+          <section className="admin-dashboard-panel">
+            <div className="admin-dashboard-heading"><div><span className="feature-panel-kicker">المتابعة والتدقيق</span><h1>سجلات الطلاب والمشرفين</h1><p>كل عملية مسجلة مع المستخدم والجهاز والتاريخ والوقت.</p></div><button type="button" className="action-button primary" onClick={() => void refreshAuditLogs()}>تحديث السجلات</button></div>
+            <div className="admin-record-list">{auditLogs.map((log, index) => <div className="admin-record-item" key={`${getAdminRecordValue(log, ['log_id'])}-${index}`}><strong>{String(getAdminRecordValue(log, ['action']) || 'عملية')}</strong><span>المستخدم: {String(getAdminRecordValue(log, ['username']) || 'غير محدد')}</span><span>النوع: {String(getAdminRecordValue(log, ['user_type']) || '')}</span><span>{String(getAdminRecordValue(log, ['created_at']) || '')}</span><span>الجهاز: {String(getAdminRecordValue(log, ['device_type']) || '')} / {String(getAdminRecordValue(log, ['platform']) || '')}</span><span>المسار: {String(getAdminRecordValue(log, ['path']) || '')}</span></div>)}</div>
+            {auditLogs.length === 0 && <div className="loading-box">لا توجد سجلات أو لم يتم إنشاء جدول سجلات النظام بعد.</div>}
           </section>
         )}
 

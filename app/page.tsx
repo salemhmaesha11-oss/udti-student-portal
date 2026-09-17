@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { FormEvent, useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { writeAuditLog } from '../lib/auditLog';
 import {
   getAttendanceForStudent,
   getStudentById,
@@ -22,6 +23,8 @@ type GradeEntry = {
   total: number | null;
   assistance: string;
 };
+
+const studentSessionStorageKey = 'udti-student-session';
 
 const metadataKeys = new Set([
   'id',
@@ -177,6 +180,21 @@ export default function Home() {
   ]);
   const [studentStatus, setStudentStatus] = useState<string>('غير متوفر');
 
+  useEffect(() => {
+    try {
+      const storedStudent = window.localStorage.getItem(studentSessionStorageKey);
+      if (!storedStudent) return;
+      const student = JSON.parse(storedStudent) as StudentRow;
+      if (student?.['الرقم الجامعي']) {
+        setLoggedStudent(student);
+        setIsLoggedIn(true);
+        setNotice('تمت استعادة جلسة الطالب.');
+      }
+    } catch {
+      window.localStorage.removeItem(studentSessionStorageKey);
+    }
+  }, []);
+
   const tabs = [
     { key: 'grades', label: 'العلامات' },
     { key: 'record', label: 'السجل' },
@@ -241,10 +259,24 @@ export default function Home() {
 
     setLoggedStudent(user as StudentRow);
     setIsLoggedIn(true);
+    window.localStorage.setItem(studentSessionStorageKey, JSON.stringify(user));
+    writeAuditLog({
+      action: 'student_login',
+      userType: 'student',
+      userId: studentId,
+      username: String(getRecordValue(user as Record<string, unknown>, ['اسم الطالب', 'student_name', 'name']) ?? ''),
+    });
     setNotice(`تم تسجيل الدخول بنجاح، مرحباً ${normalizeText(getRecordValue(user as Record<string, unknown>, ['اسم الطالب', 'student_name', 'name']))}`);
   };
 
   const logout = () => {
+    writeAuditLog({
+      action: 'student_logout',
+      userType: 'student',
+      userId: loggedStudent?.['الرقم الجامعي'],
+      username: String(loggedStudent?.['اسم الطالب'] ?? ''),
+    });
+    window.localStorage.removeItem(studentSessionStorageKey);
     setIsLoggedIn(false);
     setLoggedStudent(null);
     setLoginData({ studentId: '', password: '' });
@@ -425,7 +457,16 @@ export default function Home() {
                   key={tab.key}
                   className={`tab ${activeTab === tab.key ? 'active' : ''}`}
                   type="button"
-                  onClick={() => setActiveTab(tab.key)}
+                  onClick={() => {
+                    setActiveTab(tab.key);
+                    writeAuditLog({
+                      action: 'student_tab_opened',
+                      userType: 'student',
+                      userId: loggedStudent?.['الرقم الجامعي'],
+                      username: String(loggedStudent?.['اسم الطالب'] ?? ''),
+                      details: { tab: tab.key },
+                    });
+                  }}
                 >
                   {tab.label}
                 </button>

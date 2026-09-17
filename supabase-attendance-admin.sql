@@ -4,6 +4,18 @@ alter table if exists public."الحضور"
 alter table if exists public."الحضور"
   add column if not exists "تفاصيل الغياب" text;
 
+alter table if exists public."الحضور"
+  add column if not exists "المشرف" text;
+
+alter table if exists public."الحضور"
+  add column if not exists "الوقت" time;
+
+alter table if exists public."الإنذارات"
+  add column if not exists "المشرف" text;
+
+alter table if exists public."الإنذارات"
+  add column if not exists "الوقت" time;
+
 create index if not exists attendance_student_id_idx
   on public."الحضور" ("الرقم الجامعي");
 
