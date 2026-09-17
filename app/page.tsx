@@ -190,11 +190,18 @@ export default function Home() {
   const [capsLockOn, setCapsLockOn] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
 
+  const isTelegramEnabled = (value: any): boolean => {
+    if (value === undefined || value === null) return true;
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'string') {
+      return value.toLowerCase() === 'true' || value.toLowerCase() === 'yes';
+    }
+    return Boolean(value);
+  };
+
   const getStudentTelegramPreference = (student: StudentRow | null | undefined) => {
     const value = student?.telegram_notifications_enabled ?? student?.['telegram_notifications_enabled'];
-    if (value === undefined || value === null) return true;
-    if (typeof value === 'string') return value === 'true' || value === '1' || value.toLowerCase() === 'yes';
-    return Boolean(value);
+    return isTelegramEnabled(value);
   };
 
   const persistTelegramPreference = async (enabled: boolean) => {
