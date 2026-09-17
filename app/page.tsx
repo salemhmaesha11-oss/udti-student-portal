@@ -14,6 +14,7 @@ import {
   StudentRow,
   updateStudentClass,
 } from '../lib/studentData';
+import { buildStudentTelegramMessage, sendTelegramNotification } from '../lib/telegram';
 
 type TabKey = 'grades' | 'record' | 'status';
 
@@ -185,8 +186,32 @@ export default function Home() {
   const [selectedClassForUpdate, setSelectedClassForUpdate] = useState('');
   const [isChangingClass, setIsChangingClass] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [telegramNotificationsEnabled, setTelegramNotificationsEnabled] = useState(true);
   const [capsLockOn, setCapsLockOn] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
+
+  const getStudentTelegramPreference = (student: StudentRow | null | undefined) => {
+    const value = student?.telegram_notifications_enabled ?? student?.['telegram_notifications_enabled'];
+    if (value === undefined || value === null) return true;
+    if (typeof value === 'string') return value === 'true' || value === '1' || value.toLowerCase() === 'yes';
+    return Boolean(value);
+  };
+
+  const persistTelegramPreference = async (enabled: boolean) => {
+    const studentId = String(loggedStudent?.['الرقم الجامعي'] ?? '').trim();
+    if (!studentId) return;
+
+    try {
+      const { error } = await supabase.from('students').update({ telegram_notifications_enabled: enabled }).eq('الرقم الجامعي', studentId);
+      if (!error) {
+        setLoggedStudent((previous) => (previous ? { ...previous, telegram_notifications_enabled: enabled, 'telegram_notifications_enabled': enabled } : previous));
+        const nextStudent = { ...(loggedStudent ?? {}), telegram_notifications_enabled: enabled, 'telegram_notifications_enabled': enabled } as StudentRow;
+        window.localStorage.setItem(studentSessionStorageKey, JSON.stringify(nextStudent));
+      }
+    } catch {
+      // Ignore DB column mismatch; keep local UI state for active session.
+    }
+  };
 
   const refreshClassOptions = async () => {
     try {
@@ -225,6 +250,7 @@ export default function Home() {
       const student = JSON.parse(storedStudent) as StudentRow;
       if (student?.['الرقم الجامعي']) {
         setLoggedStudent(student);
+        setTelegramNotificationsEnabled(getStudentTelegramPreference(student));
         setIsLoggedIn(true);
         setNotice('تمت استعادة جلسة الطالب.');
       }
@@ -308,9 +334,11 @@ export default function Home() {
         return;
       }
 
-      setLoggedStudent(user as StudentRow);
+      const hydratedUser = { ...(user as StudentRow), telegram_notifications_enabled: getStudentTelegramPreference(user as StudentRow), 'telegram_notifications_enabled': getStudentTelegramPreference(user as StudentRow) } as StudentRow;
+      setLoggedStudent(hydratedUser);
+      setTelegramNotificationsEnabled(getStudentTelegramPreference(hydratedUser));
       setIsLoggedIn(true);
-      window.localStorage.setItem(studentSessionStorageKey, JSON.stringify(user));
+      window.localStorage.setItem(studentSessionStorageKey, JSON.stringify(hydratedUser));
       writeAuditLog({
         action: 'student_login',
         userType: 'student',
@@ -628,6 +656,47 @@ export default function Home() {
           </div>
 
           <div className="student-details-grid">
+            <div className="detail-item" style={{ gridColumn: '1 / -1' }}>
+              <div className="detail-label">إعدادات التنبيهات</div>
+              <div className="detail-value" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                <span>{telegramNotificationsEnabled ? 'التنبيهات مفعلة' : 'التنبيهات متوقفة'}</span>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const nextValue = !telegramNotificationsEnabled;
+                    setTelegramNotificationsEnabled(nextValue);
+                    await persistTelegramPreference(nextValue);
+                    setToast({ message: nextValue ? 'تم تفعيل تنبيهات التليجرام' : 'تم إيقاف تنبيهات التليجرام', type: 'success' });
+                  }}
+                  style={{
+                    position: 'relative',
+                    width: 56,
+                    height: 30,
+                    borderRadius: 999,
+                    border: 'none',
+                    background: telegramNotificationsEnabled ? '#10b981' : '#cbd5e1',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                    padding: 0,
+                  }}
+                  aria-label={telegramNotificationsEnabled ? 'إيقاف التنبيهات' : 'تفعيل التنبيهات'}
+                >
+                  <span
+                    style={{
+                      position: 'absolute',
+                      top: 4,
+                      left: telegramNotificationsEnabled ? 28 : 4,
+                      width: 22,
+                      height: 22,
+                      borderRadius: '50%',
+                      background: '#fff',
+                      boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+                      transition: 'all 0.2s ease',
+                    }}
+                  />
+                </button>
+              </div>
+            </div>
             <div className="detail-item">
               <div className="detail-label">رقم الهاتف</div>
               <div className="detail-value">{formatStudentValue(loggedStudent?.['رقم الهاتف'])}</div>

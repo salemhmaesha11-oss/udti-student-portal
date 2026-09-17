@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { writeAuditLog } from '../../lib/auditLog';
 import { getClassAvailabilityOptions } from '../../lib/studentData';
-import { sendTelegramNotification } from '../../lib/telegram';
+import { buildStudentTelegramMessage, sendTelegramNotification } from '../../lib/telegram';
 
 type StudentRow = {
   id?: number | string;
@@ -23,6 +23,7 @@ type StudentRow = {
   'تاريخ_تغيير_الفئة'?: string | null;
   'تاريخ الإنشاء'?: string | null;
   'السنه الدراسية'?: string | number;
+  'telegram_notifications_enabled'?: boolean | string;
   class?: string;
   year?: string;
   password?: string;
@@ -1750,14 +1751,24 @@ export default function AttendancePage() {
     const studentName = getFullStudentName(student);
     const studentYear = normalizeText(student['السنه الدراسية']);
     const studentClass = normalizeText(student['الفئة']) !== 'غير متوفر' ? normalizeText(student['الفئة']) : 'بدون فئة';
-    const message = `
-      <b>تنبيه طالب</b>\n
-      <b>الاسم:</b> ${studentName}\n
-      <b>الرقم الجامعي:</b> ${getStudentIdentifier(student) || 'غير محدد'}\n
-      <b>السنة:</b> ${studentYear}\n
-      <b>الفئة:</b> ${studentClass}\n
-      <b>الحالة:</b> ${statusText || 'تذكير بالحضور'}
-    `;
+    const studentId = getStudentIdentifier(student) || 'غير محدد';
+    const notificationEnabled = student.telegram_notifications_enabled ?? student['telegram_notifications_enabled'] ?? true;
+    const isNotificationEnabled = typeof notificationEnabled === 'string'
+      ? notificationEnabled === 'true' || notificationEnabled === '1' || notificationEnabled.toLowerCase() === 'yes'
+      : Boolean(notificationEnabled);
+
+    if (!isNotificationEnabled) {
+      setNotice(`تم إيقاف تنبيهات التليجرام لهذا الطالب (${studentName}).`);
+      return;
+    }
+
+    const message = buildStudentTelegramMessage({
+      studentName,
+      studentId,
+      studentYear,
+      studentClass,
+      statusText: statusText || 'تذكير بالحضور',
+    });
 
     try {
       const result = await sendTelegramNotification(message);
