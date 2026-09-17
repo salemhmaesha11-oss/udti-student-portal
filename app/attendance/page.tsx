@@ -4,6 +4,8 @@ import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { writeAuditLog } from '../../lib/auditLog';
+import { getClassAvailabilityOptions } from '../../lib/studentData';
+import { sendTelegramNotification } from '../../lib/telegram';
 
 type StudentRow = {
   id?: number | string;
@@ -31,7 +33,7 @@ type StudentRow = {
 };
 
 type AttendanceStatus = 'pending' | 'present' | 'absent';
-type SupervisorFeature = 'attendance' | 'admin' | 'supervisors' | 'logs' | 'students';
+type SupervisorFeature = 'attendance' | 'admin' | 'supervisors' | 'logs' | 'students' | 'create_student';
 type AdminRecord = Record<string, unknown>;
 
 type AttendanceEntry = {
@@ -176,7 +178,11 @@ const getSupervisorFeatures = (degree: string): SupervisorFeature[] => {
     return ['admin', 'attendance', 'supervisors', 'logs', 'students'];
   }
 
-  if (['2', '3'].includes(normalizedDegree) || ['supervisor', 'سوبر', 'سوبرفايزور', 'super', 'supervisor2', 'fayzor', 'fayzur', 'فايزور', 'faizur'].includes(lowerDegree)) {
+  if (normalizedDegree === '2' || ['supervisor', 'سوبر', 'سوبرفايزور', 'super', 'supervisor2', 'fayzor', 'fayzur', 'فايزور', 'faizur'].includes(lowerDegree)) {
+    return ['attendance', 'create_student'];
+  }
+
+  if (['3'].includes(normalizedDegree)) {
     return ['attendance'];
   }
 
@@ -483,24 +489,23 @@ const getSupabaseErrorText = (error: unknown) => {
   }
 };
 
+const isDuplicateStudentIdError = (error: unknown) => {
+  if (!error || typeof error !== 'object') return false;
+
+  const status = 'status' in error ? Number((error as { status?: number }).status) : undefined;
+  const code = 'code' in error ? String((error as { code?: string }).code ?? '') : '';
+  const message = 'message' in error ? String((error as { message?: string }).message ?? '').toLowerCase() : '';
+
+  return status === 409 || code === '23505' || message.includes('duplicate') || message.includes('already exists');
+};
+
 const getStudentIdentifier = (student: StudentRow) => {
   const direct = [
     student['الرقم الجامعي'],
     student['الرقم'],
-    student.student_id,
-    student.studentId,
-    student.id,
-    student['id'],
   ].find((value) => value !== undefined && value !== null && String(value).trim() !== '');
 
   if (direct !== undefined) return String(direct).trim();
-
-  for (const [key, value] of Object.entries(student)) {
-    if (value !== undefined && value !== null && String(value).trim() !== '' && /(رقم|id|student)/i.test(key)) {
-      return String(value).trim();
-    }
-  }
-
   return '';
 };
 
@@ -540,8 +545,9 @@ const getStudentValidationError = (draft: Record<string, string>) => {
     }
   }
 
-  const classValue = normalizeStudentClassValue(String(draft['الفئة'] ?? ''));
-  if (!classValue || !allowedStudentClasses.includes(classValue as typeof allowedStudentClasses[number])) {
+  const rawClassValue = String(draft['الفئة'] ?? '').trim();
+  const classValue = normalizeStudentClassValue(rawClassValue);
+  if (rawClassValue && rawClassValue !== 'بدون فئة' && classValue && !allowedStudentClasses.includes(classValue as typeof allowedStudentClasses[number])) {
     return 'الفئة يجب أن تكون واحدة من: أ، ب، ج، د فقط';
   }
 
@@ -558,17 +564,18 @@ const getStudentValidationError = (draft: Record<string, string>) => {
 };
 
 const normalizeStudentDraftValues = (draft: Record<string, string>) => {
+  const rawClassValue = String(draft['الفئة'] ?? '').trim();
   const normalized: Record<string, string> = {
     ...draft,
     'القسم': String(draft['القسم'] ?? defaultStudentSection).trim() || defaultStudentSection,
-    'الفئة': normalizeStudentClassValue(draft['الفئة'] ?? '') || '',
+    'الفئة': rawClassValue === 'بدون فئة' ? '' : normalizeStudentClassValue(rawClassValue) || '',
     'السنه الدراسية': normalizeStudentYearValue(draft['السنه الدراسية'] ?? '') || '',
   };
   return normalized;
 };
 
 const buildStudentEditDraft = (student: StudentRow) => ({
-  'الرقم الجامعي': String(getStudentIdentifier(student) || student['الرقم الجامعي'] || student['الرقم'] || student.student_id || student.studentId || student.id || ''),
+  'الرقم الجامعي': String(getStudentIdentifier(student) || student['الرقم الجامعي'] || student['الرقم'] || ''),
   'كلمة السر': String(student['كلمة السر'] ?? student.password ?? ''),
   'اسم الطالب': String(student['اسم الطالب'] ?? student.name ?? ''),
   'اسم الاب': String(student['اسم الاب'] ?? ''),
@@ -1105,21 +1112,9 @@ export default function AttendancePage() {
   const refreshStudentDirectory = async () => {
     setAdminLoading(true);
     try {
-      const tableNames = ['students', 'student'];
-      let finalRows: StudentRow[] = [];
-      let lastError: unknown = null;
-
-      for (const tableName of tableNames) {
-        const { data, error } = await supabase.from(tableName).select('*');
-        if (!error) {
-          finalRows = Array.isArray(data) ? (data as StudentRow[]) : [];
-          break;
-        }
-        lastError = error;
-      }
-
-      if (!finalRows.length && lastError) throw lastError;
-      setStudentDirectory(finalRows);
+      const { data, error } = await supabase.from('students').select('*');
+      if (error) throw error;
+      setStudentDirectory(Array.isArray(data) ? (data as StudentRow[]) : []);
     } catch (error) {
       setNotice(`تعذر تحميل بيانات الطلاب: ${getSupabaseErrorText(error)}`);
     } finally {
@@ -1211,38 +1206,32 @@ export default function AttendancePage() {
       Object.entries(payload).filter(([, value]) => value !== undefined && value !== null && value !== '')
     ) as Record<string, string>;
 
-    const selectedStudent = studentDirectory.find((row) => {
-      const rowId = getStudentIdentifier(row);
-      return rowId === editingStudentId || String(row.id ?? '') === editingStudentId || String(row['الرقم الجامعي'] ?? row['الرقم'] ?? row.student_id ?? row.studentId ?? row.id ?? '') === editingStudentId;
-    }) ?? studentDirectory.find((row) => getStudentIdentifier(row) === studentId || String(row.id ?? '') === studentId);
+    console.log('[attendance][student-update] payload', cleanPayload);
 
-    const idSearchValues = selectedStudent
-      ? [
-          String(selectedStudent['الرقم الجامعي'] ?? selectedStudent['الرقم'] ?? selectedStudent.student_id ?? selectedStudent.studentId ?? selectedStudent.id ?? ''),
-          String(selectedStudent.id ?? ''),
-        ].filter(Boolean)
-      : [studentId];
+    const { data, error } = await supabase
+      .from('students')
+      .update(cleanPayload)
+      .eq('الرقم الجامعي', studentId);
 
-    const candidateTableNames = ['students', 'student'];
-    let lastError: unknown = null;
+    if (error) {
+      console.error('Supabase Error Detail:', error);
+      console.error('[attendance][student-update] failed payload', cleanPayload);
 
-    for (const tableName of candidateTableNames) {
-      for (const fieldName of ['الرقم الجامعي', 'الرقم', 'student_id', 'studentId', 'id']) {
-        for (const lookupValue of idSearchValues) {
-          const result = await supabase.from(tableName).update(cleanPayload).eq(fieldName, lookupValue);
-          if (!result.error) {
-            setNotice('تم تحديث بيانات الطالب بنجاح');
-            setEditingStudentId('');
-            setEditingStudentDraft({});
-            await refreshStudentDirectory();
-            return;
-          }
-          lastError = result.error;
-        }
+      if (isDuplicateStudentIdError(error)) {
+        setNotice('الرقم الجامعي موجود مسبقاً، يرجى استخدام رقم جامعي آخر أو تعديل بيانات الطالب الحالي.');
+        return;
       }
+
+      setNotice(`تعذر تحديث بيانات الطالب: ${getSupabaseErrorText(error)}`);
+      return;
     }
 
-    setNotice(`تعذر تحديث بيانات الطالب: ${getSupabaseErrorText(lastError ?? 'خطأ غير معروف')}`);
+    console.log('[attendance][student-update] success', data);
+
+    setNotice('تم تحديث بيانات الطالب بنجاح');
+    setEditingStudentId('');
+    setEditingStudentDraft({});
+    await refreshStudentDirectory();
   };
 
   const createStudentAccount = async () => {
@@ -1251,6 +1240,7 @@ export default function AttendancePage() {
       'القسم': defaultStudentSection,
     };
 
+    const canAssignClass = supervisorDegree === '2';
     const validationError = getStudentValidationError(draft);
     if (validationError) {
       setNotice(validationError);
@@ -1260,6 +1250,16 @@ export default function AttendancePage() {
     const normalizedDraft: Record<string, string> = normalizeStudentDraftValues(draft);
     normalizedDraft['القسم'] = defaultStudentSection;
 
+    const chosenClass = normalizeStudentClassValue(String(normalizedDraft['الفئة'] ?? ''));
+    if (chosenClass && canAssignClass) {
+      const classSummary = await getClassAvailabilityOptions();
+      const seatInfo = classSummary.find((item) => item.name === chosenClass);
+      if (seatInfo && typeof seatInfo.available === 'number' && seatInfo.available <= 0) {
+        setNotice(`لا توجد مقاعد متاحة في الفئة ${chosenClass} الآن.`);
+        return;
+      }
+    }
+
     const payload: Record<string, string> = {
       'الرقم الجامعي': String(normalizedDraft['الرقم الجامعي'] ?? '').trim(),
       'كلمة السر': String(normalizedDraft['كلمة السر'] ?? '').trim() || '123456',
@@ -1267,7 +1267,6 @@ export default function AttendancePage() {
       'اسم الاب': String(normalizedDraft['اسم الاب'] ?? '').trim(),
       'الكنية': String(normalizedDraft['الكنية'] ?? '').trim(),
       'القسم': defaultStudentSection,
-      'الفئة': String(normalizedDraft['الفئة'] ?? '').trim(),
       'السنه الدراسية': String(normalizedDraft['السنه الدراسية'] ?? '').trim(),
       'رقم الهاتف': String(normalizedDraft['رقم الهاتف'] ?? '').trim(),
       'البريد الإلكتروني': String(normalizedDraft['البريد الإلكتروني'] ?? '').trim(),
@@ -1275,9 +1274,26 @@ export default function AttendancePage() {
       'ملاحظة': String(normalizedDraft['ملاحظة'] ?? '').trim(),
     };
 
+    if (chosenClass) {
+      payload['الفئة'] = chosenClass;
+    }
+
+    const canCreateAccount = ['1', '2'].includes(supervisorDegree) || supervisorFeatures.includes('students');
+    if (!canCreateAccount) {
+      setNotice('لا توجد صلاحية لإنشاء حساب طالب في هذا المستوى.');
+      return;
+    }
+
     try {
       const { error } = await supabase.from('students').insert([payload]);
       if (error) {
+        console.error('Supabase Error Detail:', error);
+
+        if (isDuplicateStudentIdError(error)) {
+          setNotice('الرقم الجامعي موجود مسبقاً، يرجى استخدام رقم جامعي آخر أو تعديل بيانات الطالب الحالي.');
+          return;
+        }
+
         setNotice(`تعذر إنشاء حساب الطالب: ${error.message}`);
         return;
       }
@@ -1300,6 +1316,13 @@ export default function AttendancePage() {
       });
       await refreshStudentDirectory();
     } catch (error) {
+      console.error('Supabase Error Detail:', error);
+
+      if (isDuplicateStudentIdError(error)) {
+        setNotice('الرقم الجامعي موجود مسبقاً، يرجى استخدام رقم جامعي آخر أو تعديل بيانات الطالب الحالي.');
+        return;
+      }
+
       setNotice(`تعذر إنشاء حساب الطالب: ${getSupabaseErrorText(error)}`);
     }
   };
@@ -1344,7 +1367,7 @@ export default function AttendancePage() {
   ].map((record) => String(getAdminRecordValue(record, ['الرقم الجامعي', 'student_id', 'studentId']))).filter(Boolean))), [filteredAdminAttendance, filteredAdminWarnings]);
 
   const studentClassOptions = useMemo(() => {
-    const options = new Set<string>(['أ', 'ب', 'ج', 'د', 'بدون فئة']);
+    const options = new Set<string>(['بدون فئة', 'أ', 'ب', 'ج', 'د']);
     studentDirectory.forEach((student) => {
       const className = String(student['الفئة'] ?? '').trim();
       if (className) options.add(className);
@@ -1352,13 +1375,6 @@ export default function AttendancePage() {
     });
     return Array.from(options);
   }, [studentDirectory]);
-
-  useEffect(() => {
-    if (!studentClassFilter && studentClassOptions.length) {
-      const defaultSelection = studentClassOptions.find((option) => option !== 'بدون فئة') ?? studentClassOptions[0];
-      if (defaultSelection) setStudentClassFilter(defaultSelection);
-    }
-  }, [studentClassFilter, studentClassOptions]);
 
   const filteredStudentDirectory = useMemo(() => {
     const normalizedSearch = studentDirectorySearch.trim().toLowerCase();
@@ -1728,6 +1744,32 @@ export default function AttendancePage() {
     });
   };
 
+  const handleSendTelegramForStudent = async (student: StudentRow, statusText?: string) => {
+    const studentName = getFullStudentName(student);
+    const studentYear = normalizeText(student['السنه الدراسية']);
+    const studentClass = normalizeText(student['الفئة']) !== 'غير متوفر' ? normalizeText(student['الفئة']) : 'بدون فئة';
+    const message = `
+      <b>تنبيه طالب</b>\n
+      <b>الاسم:</b> ${studentName}\n
+      <b>الرقم الجامعي:</b> ${getStudentIdentifier(student) || 'غير محدد'}\n
+      <b>السنة:</b> ${studentYear}\n
+      <b>الفئة:</b> ${studentClass}\n
+      <b>الحالة:</b> ${statusText || 'تذكير بالحضور'}
+    `;
+
+    try {
+      const result = await sendTelegramNotification(message);
+      if (result && result.ok !== false) {
+        setNotice(`تم إرسال تنبيه الطالب ${studentName} إلى التليجرام بنجاح.`);
+      } else {
+        setNotice(`فشل إرسال تنبيه الطالب ${studentName} إلى التليجرام.`);
+      }
+    } catch (error) {
+      console.error('Telegram student notify failed:', error);
+      setNotice(`تعذر إرسال تنبيه الطالب ${studentName} إلى التليجرام.`);
+    }
+  };
+
   const resetSession = () => {
     if (activeSession) void closeAttendanceSession(activeSession.id);
     setAttendanceData({});
@@ -2015,7 +2057,23 @@ export default function AttendancePage() {
                   <span className="feature-arrow" aria-hidden="true">←</span>
                 </button>
               )}
-              {supervisorFeatures.includes('supervisors') && (
+              {supervisorFeatures.includes('create_student') && (
+                <button type="button" className="supervisor-feature-card" onClick={() => {
+                  setSelectedFeature('create_student');
+                  const stored = JSON.parse(window.localStorage.getItem(supervisorSessionStorageKey) || '{}') as StoredSupervisorSession;
+                  window.localStorage.setItem(supervisorSessionStorageKey, JSON.stringify({ ...stored, selectedFeature: 'create_student' }));
+                  writeAuditLog({ action: 'feature_opened', userType: 'supervisor', username: supervisorUsername, details: { feature: 'create_student' } });
+                  setNotice('تم فتح إنشاء حساب طالب جديد.');
+                }}>
+                  <span className="feature-icon" aria-hidden="true">＋</span>
+                  <span>
+                    <strong>إنشاء حساب</strong>
+                    <small>إنشاء حساب طالب جديد فقط للرتبة 2</small>
+                  </span>
+                  <span className="feature-arrow" aria-hidden="true">←</span>
+                </button>
+              )}
+              {supervisorFeatures.includes('students') && (
                 <button type="button" className="supervisor-feature-card" onClick={() => {
                   setSelectedFeature('students');
                   const stored = JSON.parse(window.localStorage.getItem(supervisorSessionStorageKey) || '{}') as StoredSupervisorSession;
@@ -2190,28 +2248,71 @@ export default function AttendancePage() {
           </section>
         )}
 
-        {supervisorLoggedIn && selectedFeature === 'students' && (
+        {supervisorLoggedIn && selectedFeature === 'create_student' && (
           <section className="admin-dashboard-panel">
             <div className="admin-dashboard-heading">
               <div>
-                <span className="feature-panel-kicker">إدارة الطلاب</span>
-                <h1>الطلاب</h1>
-                <p>ابحث فلة الطلاب وتعديل بياناتهم مباشرة من جدول student.</p>
+                <span className="feature-panel-kicker">إنشاء حساب</span>
+                <h1>إنشاء حساب طالب</h1>
+                <p>هذه الوظيفة مخصصة لمشرفي الدرجة 2 فقط لإنشاء حساب لطالب جديد.</p>
               </div>
               <button type="button" className="action-button primary" onClick={() => void refreshStudentDirectory()} disabled={adminLoading}>
                 {adminLoading ? 'جاري التحديث...' : 'تحديث الطلاب'}
               </button>
             </div>
 
-            <div className="admin-filter-grid">
+            <form className="admin-supervisor-form" onSubmit={(event) => {
+              event.preventDefault();
+              void createStudentAccount();
+            }}>
+              <input value={newStudentForm['الرقم الجامعي'] ?? ''} onChange={(event) => setNewStudentForm({ ...newStudentForm, 'الرقم الجامعي': event.target.value })} placeholder="الرقم الجامعي" required />
+              <input value={newStudentForm['كلمة السر'] ?? ''} onChange={(event) => setNewStudentForm({ ...newStudentForm, 'كلمة السر': event.target.value })} placeholder="كلمة السر" type="text" />
+              <input value={newStudentForm['اسم الطالب'] ?? ''} onChange={(event) => setNewStudentForm({ ...newStudentForm, 'اسم الطالب': event.target.value })} placeholder="اسم الطالب" required />
+              <input value={newStudentForm['اسم الاب'] ?? ''} onChange={(event) => setNewStudentForm({ ...newStudentForm, 'اسم الاب': event.target.value })} placeholder="اسم الأب" required />
+              <input value={newStudentForm['الكنية'] ?? ''} onChange={(event) => setNewStudentForm({ ...newStudentForm, 'الكنية': event.target.value })} placeholder="الكنية" required />
+              <select value={newStudentForm['الفئة'] ?? ''} onChange={(event) => setNewStudentForm({ ...newStudentForm, 'الفئة': event.target.value })} required={supervisorDegree !== '2'}>
+                <option value="">{supervisorDegree === '2' ? 'بدون فئة (اختياري)' : 'اختر الفئة'}</option>
+                {allowedStudentClasses.map((className) => <option key={className} value={className}>{className}</option>)}
+              </select>
+              <select value={newStudentForm['السنه الدراسية'] ?? ''} onChange={(event) => setNewStudentForm({ ...newStudentForm, 'السنه الدراسية': event.target.value })} required>
+                <option value="">اختر السنة</option>
+                {allowedStudentYears.map((year) => <option key={year} value={year}>{year}</option>)}
+              </select>
+              <input value={newStudentForm['القسم'] ?? defaultStudentSection} readOnly />
+              <input value={newStudentForm['رقم الهاتف'] ?? ''} onChange={(event) => setNewStudentForm({ ...newStudentForm, 'رقم الهاتف': event.target.value })} placeholder="رقم الهاتف" required />
+              <input value={newStudentForm['البريد الإلكتروني'] ?? ''} onChange={(event) => setNewStudentForm({ ...newStudentForm, 'البريد الإلكتروني': event.target.value })} placeholder="البريد الإلكتروني" type="email" required />
+              <input value={newStudentForm['نوع التسجيل'] ?? 'جديد'} onChange={(event) => setNewStudentForm({ ...newStudentForm, 'نوع التسجيل': event.target.value })} placeholder="نوع التسجيل" />
+              <textarea value={newStudentForm['ملاحظة'] ?? ''} onChange={(event) => setNewStudentForm({ ...newStudentForm, 'ملاحظة': event.target.value })} placeholder="ملاحظة" rows={3} />
+              <div className="admin-record-actions">
+                <button type="submit" className="action-button primary">حفظ الحساب</button>
+                <button type="button" className="action-button warning" onClick={() => { setShowCreateStudentForm(false); setNewStudentForm({ ...newStudentForm, 'القسم': defaultStudentSection }); }}>إلغاء</button>
+              </div>
+            </form>
+          </section>
+        )}
+
+        {supervisorLoggedIn && selectedFeature === 'students' && (
+          <section className="student-management-panel">
+            <div className="student-management-header">
+              <div>
+                <span className="feature-panel-kicker">إدارة الطلاب</span>
+                <h1>قائمة الطلاب</h1>
+                <p>بحث، فلترة، إنشاء حساب، وتعديل بيانات الطلاب من شاشة واحدة.</p>
+              </div>
+              <button type="button" className="action-button primary" onClick={() => void refreshStudentDirectory()} disabled={adminLoading}>
+                {adminLoading ? 'جاري التحديث...' : 'تحديث الطلاب'}
+              </button>
+            </div>
+
+            <div className="student-management-toolbar">
               <div className="field-group">
                 <label htmlFor="student-directory-search">بحث</label>
-                <input id="student-directory-search" value={studentDirectorySearch} onChange={(event) => setStudentDirectorySearch(event.target.value)} placeholder="اسم الطالب، الرقم الجامعي، الفئة أو القسم" />
+                <input id="student-directory-search" value={studentDirectorySearch} onChange={(event) => setStudentDirectorySearch(event.target.value)} placeholder="اسم الطالب، الرقم، الفئة أو القسم" />
               </div>
               <div className="field-group">
                 <label htmlFor="student-directory-class">الفئة</label>
                 <select id="student-directory-class" value={studentClassFilter} onChange={(event) => setStudentClassFilter(event.target.value)}>
-                  <option value="">اختر الفئة أولاً</option>
+                  <option value="">الكل</option>
                   {studentClassOptions.map((className) => (
                     <option key={className} value={className}>{className === 'بدون فئة' ? 'بدون فئة' : `فئة ${className}`}</option>
                   ))}
@@ -2237,18 +2338,16 @@ export default function AttendancePage() {
               </div>
             </div>
 
-            <div className="admin-record-actions" style={{ marginBottom: 18 }}>
-              <button type="button" className="action-button primary" onClick={() => setShowCreateStudentForm((state) => !state)}>
-                {showCreateStudentForm ? 'إغلاق نموذج إنشاء الحساب' : 'إنشاء حساب طالب'}
-              </button>
-            </div>
-
-            {!studentClassFilter ? (
-              <div className="loading-box">اختر الفئة أولاً ثم ستظهر طلاب تلك الفئة فقط، أو اختر بدون فئة لعرض الطلاب غير المخصصين لفئة.</div>
-            ) : null}
+            {['1', '2'].includes(supervisorDegree) && (
+              <div className="student-management-actions">
+                <button type="button" className="action-button primary" onClick={() => setShowCreateStudentForm((state) => !state)}>
+                  {showCreateStudentForm ? 'إغلاق' : 'إنشاء حساب طالب'}
+                </button>
+              </div>
+            )}
 
             {showCreateStudentForm && (
-              <form className="admin-supervisor-form" onSubmit={(event) => {
+              <form className="student-form-grid" onSubmit={(event) => {
                 event.preventDefault();
                 void createStudentAccount();
               }}>
@@ -2257,8 +2356,8 @@ export default function AttendancePage() {
                 <input value={newStudentForm['اسم الطالب'] ?? ''} onChange={(event) => setNewStudentForm({ ...newStudentForm, 'اسم الطالب': event.target.value })} placeholder="اسم الطالب" required />
                 <input value={newStudentForm['اسم الاب'] ?? ''} onChange={(event) => setNewStudentForm({ ...newStudentForm, 'اسم الاب': event.target.value })} placeholder="اسم الأب" required />
                 <input value={newStudentForm['الكنية'] ?? ''} onChange={(event) => setNewStudentForm({ ...newStudentForm, 'الكنية': event.target.value })} placeholder="الكنية" required />
-                <select value={newStudentForm['الفئة'] ?? ''} onChange={(event) => setNewStudentForm({ ...newStudentForm, 'الفئة': event.target.value })} required>
-                  <option value="">اختر الفئة</option>
+                <select value={newStudentForm['الفئة'] ?? ''} onChange={(event) => setNewStudentForm({ ...newStudentForm, 'الفئة': event.target.value })} required={supervisorDegree !== '2'}>
+                  <option value="">{supervisorDegree === '2' ? 'بدون فئة (اختياري)' : 'اختر الفئة'}</option>
                   {allowedStudentClasses.map((className) => <option key={className} value={className}>{className}</option>)}
                 </select>
                 <select value={newStudentForm['السنه الدراسية'] ?? ''} onChange={(event) => setNewStudentForm({ ...newStudentForm, 'السنه الدراسية': event.target.value })} required>
@@ -2270,39 +2369,48 @@ export default function AttendancePage() {
                 <input value={newStudentForm['البريد الإلكتروني'] ?? ''} onChange={(event) => setNewStudentForm({ ...newStudentForm, 'البريد الإلكتروني': event.target.value })} placeholder="البريد الإلكتروني" type="email" required />
                 <input value={newStudentForm['نوع التسجيل'] ?? 'جديد'} onChange={(event) => setNewStudentForm({ ...newStudentForm, 'نوع التسجيل': event.target.value })} placeholder="نوع التسجيل" />
                 <textarea value={newStudentForm['ملاحظة'] ?? ''} onChange={(event) => setNewStudentForm({ ...newStudentForm, 'ملاحظة': event.target.value })} placeholder="ملاحظة" rows={3} />
-                <div className="admin-record-actions">
+                <div className="student-form-actions">
                   <button type="submit" className="action-button primary">حفظ الحساب</button>
                   <button type="button" className="action-button warning" onClick={() => { setShowCreateStudentForm(false); setNewStudentForm({ ...newStudentForm, 'القسم': defaultStudentSection }); }}>إلغاء</button>
                 </div>
               </form>
             )}
 
-            <div className="admin-record-list">
-              {filteredStudentDirectory.map((student) => {
+            <div className="student-management-summary">
+              <span>عدد النتائج: {filteredStudentDirectory.length}</span>
+              <span>عامل التصفية الحالي: {studentClassFilter || 'الكل'}</span>
+            </div>
+
+            <div className="student-management-grid">
+              {filteredStudentDirectory.length === 0 ? (
+                <div className="empty-state">لا توجد بيانات مطابقة للبحث أو الفلتر الحالي.</div>
+              ) : filteredStudentDirectory.map((student) => {
                 const id = String(student['الرقم الجامعي'] ?? student.id ?? '').trim();
                 const name = getStudentDisplayName(student);
+                const className = String(student['الفئة'] ?? '').trim() || 'بدون فئة';
                 return (
-                  <div className="admin-record-item" key={`${id || name}-${student['الفئة'] || 'unknown'}`}>
-                    <strong>{name}</strong>
-                    <span>الرقم: {id || 'غير محدد'}</span>
-                    <span>الفئة: {String(student['الفئة'] ?? 'غير محدد')}</span>
-                    <span>القسم: {String(student['القسم'] ?? 'غير محدد')}</span>
-                    <span>السنة: {String(student['السنه الدراسية'] ?? 'غير محدد')}</span>
-                    <div className="admin-record-actions">
-                      <button
-                        type="button"
-                        onClick={() => handleOpenStudentEditor(student)}
-                      >
-                        تعديل
-                      </button>
+                  <article className="student-management-card" key={`${id || name}-${className}`}>
+                    <div className="student-management-card-header">
+                      <strong>{name}</strong>
+                      <span className="student-management-badge">{className}</span>
                     </div>
-                  </div>
+                    <div className="student-management-card-body">
+                      <span>الرقم: {id || 'غير محدد'}</span>
+                      <span>القسم: {String(student['القسم'] ?? 'غير محدد')}</span>
+                      <span>السنة: {String(student['السنه الدراسية'] ?? 'غير محدد')}</span>
+                      <span>الهاتف: {String(student['رقم الهاتف'] ?? 'غير محدد')}</span>
+                    </div>
+                    <div className="student-management-card-actions">
+                      <button type="button" className="action-button primary" onClick={() => handleOpenStudentEditor(student)}>تعديل</button>
+                      <button type="button" className="action-button" style={{ background: '#2563eb', color: '#fff' }} onClick={() => void handleSendTelegramForStudent(student, 'تذكير بالحضور')}>إرسال تلجرام</button>
+                    </div>
+                  </article>
                 );
               })}
             </div>
 
             {editingStudentId && (
-              <form className="admin-supervisor-form" onSubmit={(event) => {
+              <form className="student-form-grid student-edit-form" onSubmit={(event) => {
                 event.preventDefault();
                 void saveEditedStudent();
               }}>
@@ -2312,8 +2420,8 @@ export default function AttendancePage() {
                 <input value={editingStudentDraft['الرقم الجامعي'] ?? ''} onChange={(event) => setEditingStudentDraft({ ...editingStudentDraft, 'الرقم الجامعي': event.target.value })} placeholder="الرقم الجامعي" required />
                 <input value={editingStudentDraft['كلمة السر'] ?? ''} onChange={(event) => setEditingStudentDraft({ ...editingStudentDraft, 'كلمة السر': event.target.value })} placeholder="كلمة السر" type="text" />
                 <input value={editingStudentDraft['القسم'] ?? defaultStudentSection} onChange={(event) => setEditingStudentDraft({ ...editingStudentDraft, 'القسم': event.target.value })} placeholder="القسم" readOnly />
-                <select value={editingStudentDraft['الفئة'] ?? ''} onChange={(event) => setEditingStudentDraft({ ...editingStudentDraft, 'الفئة': event.target.value })} required>
-                  <option value="">اختر الفئة</option>
+                <select value={editingStudentDraft['الفئة'] ?? ''} onChange={(event) => setEditingStudentDraft({ ...editingStudentDraft, 'الفئة': event.target.value })}>
+                  <option value="">بدون فئة</option>
                   {allowedStudentClasses.map((className) => <option key={className} value={className}>{className}</option>)}
                 </select>
                 <select value={editingStudentDraft['السنه الدراسية'] ?? ''} onChange={(event) => setEditingStudentDraft({ ...editingStudentDraft, 'السنه الدراسية': event.target.value })} required>
@@ -2324,7 +2432,7 @@ export default function AttendancePage() {
                 <input value={editingStudentDraft['البريد الإلكتروني'] ?? ''} onChange={(event) => setEditingStudentDraft({ ...editingStudentDraft, 'البريد الإلكتروني': event.target.value })} placeholder="البريد الإلكتروني" type="email" required />
                 <input value={editingStudentDraft['نوع التسجيل'] ?? ''} onChange={(event) => setEditingStudentDraft({ ...editingStudentDraft, 'نوع التسجيل': event.target.value })} placeholder="نوع التسجيل" />
                 <textarea value={editingStudentDraft['ملاحظة'] ?? ''} onChange={(event) => setEditingStudentDraft({ ...editingStudentDraft, 'ملاحظة': event.target.value })} placeholder="ملاحظة" rows={3} />
-                <div className="admin-record-actions">
+                <div className="student-form-actions">
                   <button type="submit" className="action-button primary">حفظ التعديل</button>
                   <button type="button" className="action-button warning" onClick={() => { setEditingStudentId(''); setEditingStudentDraft({}); }}>إلغاء</button>
                 </div>
@@ -2483,6 +2591,9 @@ export default function AttendancePage() {
                       </button>
                       <button type="button" className="mini-btn danger" onClick={() => updateStudentStatus(student, 'absent')}>
                         غائب
+                      </button>
+                      <button type="button" className="mini-btn" style={{ background: '#2563eb' }} onClick={() => void handleSendTelegramForStudent(student, status === 'present' ? 'حاضر' : status === 'absent' ? 'غائب' : 'تذكير بالحضور')}>
+                        إرسال تلجرام
                       </button>
                     </div>
 

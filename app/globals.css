@@ -1480,6 +1480,170 @@ tr:nth-child(even) td {
   color: #294e47;
 }
 
+.student-management-panel {
+  width: min(1200px, 100%);
+  margin: 22px auto 0;
+  padding: clamp(18px, 4vw, 30px);
+  border-radius: 20px;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.98), rgba(244, 248, 246, 0.98));
+  box-shadow: 0 20px 50px rgba(47, 63, 58, 0.12);
+}
+
+.student-management-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.student-management-header h1 {
+  margin: 0;
+  color: #294e47;
+  font-size: clamp(1.6rem, 4vw, 2.2rem);
+}
+
+.student-management-header p {
+  margin-top: 6px;
+  color: #687872;
+}
+
+.student-management-toolbar {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(180px, 1fr));
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid #dce9e3;
+  border-radius: 16px;
+  background: #fff;
+}
+
+.student-management-toolbar .field-group {
+  margin-bottom: 0;
+}
+
+.student-management-toolbar input,
+.student-management-toolbar select,
+.student-form-grid input,
+.student-form-grid select,
+.student-form-grid textarea {
+  width: 100%;
+  min-height: 46px;
+  border: 1px solid #d6e3dd;
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: #fbfdfc;
+  color: #294e47;
+  font-family: inherit;
+}
+
+.student-form-grid textarea {
+  min-height: 90px;
+  resize: vertical;
+}
+
+.student-management-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 18px 0;
+}
+
+.student-form-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(180px, 1fr));
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid #dce9e3;
+  border-radius: 16px;
+  background: #fff;
+}
+
+.student-edit-form {
+  margin-top: 22px;
+}
+
+.student-form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  grid-column: 1 / -1;
+}
+
+.student-management-summary {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 18px 0 12px;
+  color: #62736c;
+  font-weight: 700;
+}
+
+.student-management-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 14px;
+}
+
+.student-management-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid #dce9e3;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 8px 18px rgba(54, 90, 78, 0.06);
+}
+
+.student-management-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.student-management-card-header strong {
+  color: #1f3d36;
+}
+
+.student-management-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: #e8f2ed;
+  color: #346857;
+  font-weight: 800;
+  font-size: 0.75rem;
+}
+
+.student-management-card-body {
+  display: grid;
+  gap: 6px;
+  color: #5d6f68;
+  font-size: 0.88rem;
+}
+
+.student-management-card-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.empty-state {
+  padding: 18px;
+  border: 1px dashed #cfe0d8;
+  border-radius: 12px;
+  background: #f9fbfa;
+  color: #5f716d;
+  text-align: center;
+}
+
 .admin-record-item span {
   line-height: 1.6;
 }
