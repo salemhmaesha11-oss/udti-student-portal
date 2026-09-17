@@ -348,9 +348,15 @@ export default function Home() {
         return;
       }
 
-      const hydratedUser = { ...(user as StudentRow), telegram_notifications_enabled: getStudentTelegramPreference(user as StudentRow), 'telegram_notifications_enabled': getStudentTelegramPreference(user as StudentRow) } as StudentRow;
+      const preference = getStudentTelegramPreference(user as StudentRow);
+
+      const hydratedUser = {
+        ...(user as StudentRow),
+        telegram_notifications_enabled: preference
+      } as StudentRow;
+
       setLoggedStudent(hydratedUser);
-      setTelegramNotificationsEnabled(getStudentTelegramPreference(hydratedUser));
+      setTelegramNotificationsEnabled(preference);
       setIsLoggedIn(true);
       window.localStorage.setItem(studentSessionStorageKey, JSON.stringify(hydratedUser));
       writeAuditLog({
