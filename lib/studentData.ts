@@ -26,7 +26,6 @@ export type StudentRow = Student & {
   'تاريخ الإنشاء'?: string | null;
   'السنه الدراسية'?: string | number;
   telegram_notifications_enabled?: boolean;
-  'telegram_notifications_enabled'?: boolean;
   password?: string;
   name?: string;
   student_id?: string | number;
