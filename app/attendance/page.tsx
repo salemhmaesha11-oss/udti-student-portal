@@ -34,6 +34,7 @@ type PendingAttendanceJob = {
   course: string;
   classValue: string;
   status: AttendanceStatus;
+  supervisor: string;
   queuedAt: string;
 };
 
@@ -59,6 +60,7 @@ const tableCandidates = {
   attendance: ['الحضور'],
   warnings: ['الإنذارات'],
   sessions: ['جلسات الحضور'],
+  supervisorWarnings: ['إنذارات المشرفين'],
 };
 
 const courseOptions = [
@@ -129,6 +131,8 @@ const getAdminRecordId = (row: AdminRecord) => {
 
 const getAdminRecordDate = (row: AdminRecord) => String(getAdminRecordValue(row, ['التاريخ', 'started_at', 'created_at', 'date']) || '');
 
+const getAdminRecordSupervisor = (row: AdminRecord) => String(getAdminRecordValue(row, ['المشرف', 'اسم المشرف', 'supervisor', 'username']) || 'غير محدد');
+
 const getAdminRecordCourse = (row: AdminRecord) => {
   const directCourse = String(getAdminRecordValue(row, ['المادة', 'course', 'subject']) || '').trim();
   if (directCourse) return directCourse;
@@ -142,10 +146,12 @@ const isDatabaseTableMissing = (error: { code?: string; message?: string } | nul
 };
 
 const loadAdminRecords = async () => {
-  const [attendanceResult, warningsResult, studentsResult] = await Promise.all([
+  const [attendanceResult, warningsResult, studentsResult, supervisorsResult, supervisorWarningsResult] = await Promise.all([
     supabase.from('الحضور').select('*'),
     supabase.from('الإنذارات').select('*'),
     supabase.from('students').select('*'),
+    supabase.from('المشرفين').select('*'),
+    supabase.from(tableCandidates.supervisorWarnings[0]).select('*'),
   ]);
 
   if (attendanceResult.error && !isDatabaseTableMissing(attendanceResult.error)) throw attendanceResult.error;
@@ -163,10 +169,19 @@ const loadAdminRecords = async () => {
     attendance: Array.isArray(attendanceResult.data) ? attendanceResult.data as AdminRecord[] : [],
     warnings: Array.isArray(warningsResult.data) ? warningsResult.data as AdminRecord[] : [],
     studentNames,
+    supervisors: !supervisorsResult.error && Array.isArray(supervisorsResult.data)
+      ? (supervisorsResult.data as AdminRecord[]).map((row) => ({
+        username: getSupervisorCredentials(row).username,
+        degree: getSupervisorDegree(row),
+      }))
+      : [],
+    supervisorWarnings: !supervisorWarningsResult.error && Array.isArray(supervisorWarningsResult.data)
+      ? supervisorWarningsResult.data as AdminRecord[]
+      : [],
   };
 };
 
-const insertAdminAttendance = async (warning: AdminRecord) => {
+const insertAdminAttendance = async (warning: AdminRecord, supervisor: string) => {
   const payload = {
     'الرقم الجامعي': getAdminRecordValue(warning, ['الرقم الجامعي', 'student_id', 'studentId']),
     'اسم الطالب': getAdminRecordValue(warning, ['اسم الطالب', 'student_name', 'name']),
@@ -175,6 +190,7 @@ const insertAdminAttendance = async (warning: AdminRecord) => {
     'الحالة': 'حاضر',
     'التاريخ': new Date().toISOString(),
     'الوقت': new Date().toLocaleTimeString('en-GB', { hour12: false }),
+    'المشرف': supervisor || 'مشرف الدرجة الأولى',
   };
 
   const firstAttempt = await supabase.from('الحضور').insert([payload]);
@@ -218,6 +234,18 @@ const updateAdminAttendance = async (record: AdminRecord, status: 'حاضر' | '
   if (!Object.keys(updates).length) return { success: false, error: 'جدول الحضور لا يحتوي حقول تعديل الحالة' };
 
   const { error } = await supabase.from('الحضور').update(updates).eq(idKey, recordId);
+  return error ? { success: false, error: error.message } : { success: true };
+};
+
+const createSupervisorWarning = async (username: string, degree: string, details: string, issuer: string) => {
+  const { error } = await supabase.from(tableCandidates.supervisorWarnings[0]).insert([{
+    'اسم المستخدم': username,
+    'الدرجة': degree,
+    'التفاصيل': details,
+    'أنشأه': issuer,
+    'التاريخ': new Date().toISOString().split('T')[0],
+    'الوقت': new Date().toLocaleTimeString('en-GB', { hour12: false }),
+  }]);
   return error ? { success: false, error: error.message } : { success: true };
 };
 
@@ -512,7 +540,7 @@ const fetchStudentsByClass = async (selectedClass: string, selectedYear: string)
   return [] as StudentRow[];
 };
 
-const saveWarningRecord = async (student: StudentRow, course: string, classValue: string, status: 'absent' | 'present') => {
+const saveWarningRecord = async (student: StudentRow, course: string, classValue: string, status: 'absent' | 'present', supervisor: string) => {
   const studentId = getStudentIdentifier(student);
   if (!studentId) {
     console.warn('[attendance][warning] student id missing before insert', { student, course, classValue, status });
@@ -537,10 +565,12 @@ const saveWarningRecord = async (student: StudentRow, course: string, classValue
     'السبب': reasonText,
     'التفاصيل': detailsText,
     'التاريخ': warningDate,
+    'الوقت': warningTime,
+    'المشرف': supervisor || 'مشرف غير محدد',
     'تم الإرسال': true,
   });
 
-  const payloadVariants = [baseRecord];
+  const payloadVariants = [baseRecord, { ...baseRecord, 'الوقت': undefined, 'المشرف': undefined }];
 
   for (const tableName of tableCandidates.warnings) {
     for (const payload of payloadVariants) {
@@ -555,7 +585,8 @@ const saveWarningRecord = async (student: StudentRow, course: string, classValue
       });
 
       try {
-        const { data, error } = await supabase.from(tableName).insert([payload]).select();
+        const cleanPayload = Object.fromEntries(Object.entries(payload).filter(([, value]) => value !== undefined));
+        const { data, error } = await supabase.from(tableName).insert([cleanPayload]).select();
         console.log('[attendance][warning] insert response', { tableName, data, error: error ? error.message : null });
 
         if (!error) return true;
@@ -577,7 +608,7 @@ const saveWarningRecord = async (student: StudentRow, course: string, classValue
   return false;
 };
 
-const saveAttendanceRecord = async (student: StudentRow, course: string, classValue: string, status: AttendanceStatus) => {
+const saveAttendanceRecord = async (student: StudentRow, course: string, classValue: string, status: AttendanceStatus, supervisor: string) => {
   const studentId = getStudentIdentifier(student);
   if (!studentId) {
     console.warn('[attendance][save] student id missing before insert', { student, course, classValue, status });
@@ -600,9 +631,14 @@ const saveAttendanceRecord = async (student: StudentRow, course: string, classVa
     'المادة': course,
     'الفئة': classValue,
     'الحالة': status === 'present' ? 'حاضر' : status === 'absent' ? 'غائب' : 'بانتظار',
+    'المشرف': supervisor || 'مشرف غير محدد',
   };
 
-  const payloadVariants = [baseRecord, { ...baseRecord, 'الحالة': undefined }];
+  const payloadVariants = [
+    baseRecord,
+    { ...baseRecord, 'الحالة': undefined },
+    { ...baseRecord, 'الحالة': undefined, 'المشرف': undefined },
+  ];
 
   for (const tableName of tableCandidates.attendance) {
     for (const payload of payloadVariants) {
@@ -642,10 +678,10 @@ const saveAttendanceRecord = async (student: StudentRow, course: string, classVa
 
 const savePendingAttendanceJob = async (job: PendingAttendanceJob) => {
   if (job.type === 'warning') {
-    return saveWarningRecord(job.student, job.course, job.classValue, 'absent');
+    return saveWarningRecord(job.student, job.course, job.classValue, 'absent', job.supervisor);
   }
 
-  return saveAttendanceRecord(job.student, job.course, job.classValue, job.status);
+  return saveAttendanceRecord(job.student, job.course, job.classValue, job.status, job.supervisor);
 };
 
 const flushPendingAttendanceJobs = async () => {
@@ -684,6 +720,8 @@ export default function AttendancePage() {
   const [adminAttendance, setAdminAttendance] = useState<AdminRecord[]>([]);
   const [adminWarnings, setAdminWarnings] = useState<AdminRecord[]>([]);
   const [adminStudentNames, setAdminStudentNames] = useState<Record<string, string>>({});
+  const [adminSupervisors, setAdminSupervisors] = useState<{ username: string; degree: string }[]>([]);
+  const [adminSupervisorWarnings, setAdminSupervisorWarnings] = useState<AdminRecord[]>([]);
   const [adminLoading, setAdminLoading] = useState(false);
   const [adminSearch, setAdminSearch] = useState('');
   const [adminCourseFilter, setAdminCourseFilter] = useState('');
@@ -721,6 +759,8 @@ export default function AttendancePage() {
       setAdminAttendance(records.attendance);
       setAdminWarnings(records.warnings);
       setAdminStudentNames(records.studentNames);
+      setAdminSupervisors(records.supervisors);
+      setAdminSupervisorWarnings(records.supervisorWarnings);
     } catch (error) {
       setNotice(`تعذر تحميل بيانات لوحة الإدارة: ${getSupabaseErrorText(error)}`);
     } finally {
@@ -776,7 +816,7 @@ export default function AttendancePage() {
 
   const handleWarningToAttendance = async (warning: AdminRecord) => {
     setAdminLoading(true);
-    const attendanceResult = await insertAdminAttendance({ ...warning, 'اسم الطالب': getAdminStudentName(warning) });
+    const attendanceResult = await insertAdminAttendance({ ...warning, 'اسم الطالب': getAdminStudentName(warning) }, supervisorUsername);
     if (!attendanceResult.success) {
       setNotice(`تعذر تسجيل الحضور: ${attendanceResult.error}`);
       setAdminLoading(false);
@@ -811,6 +851,15 @@ export default function AttendancePage() {
     setAdminLoading(true);
     const result = await updateAdminAttendance(record, status, details);
     setNotice(result.success ? 'تم تحديث حالة الحضور.' : `تعذر تحديث سجل الحضور: ${result.error}`);
+    await refreshAdminData();
+  };
+
+  const handleSupervisorWarning = async (username: string, degree: string) => {
+    const details = window.prompt(`اكتب تفاصيل الإنذار للمشرف ${username}`);
+    if (!details?.trim()) return;
+    setAdminLoading(true);
+    const result = await createSupervisorWarning(username, degree, details.trim(), supervisorUsername);
+    setNotice(result.success ? 'تم تسجيل إنذار المشرف.' : `تعذر تسجيل إنذار المشرف: ${result.error}`);
     await refreshAdminData();
   };
 
@@ -1045,6 +1094,7 @@ export default function AttendancePage() {
           course: selectedCourse,
           classValue: selectedClass,
           status,
+          supervisor: supervisorUsername,
           queuedAt: new Date().toISOString(),
         });
 
@@ -1055,6 +1105,7 @@ export default function AttendancePage() {
             course: selectedCourse,
             classValue: selectedClass,
             status: 'absent',
+            supervisor: supervisorUsername,
             queuedAt: new Date().toISOString(),
           });
         }
@@ -1270,6 +1321,28 @@ export default function AttendancePage() {
               <span>طلاب مطابقون: <strong>{adminStudentIds.length}</strong></span>
             </div>
 
+            <div className="admin-supervisor-section">
+              <div className="admin-section-heading">
+                <h2>المشرفون وسجل الجلسات</h2>
+                <span>لا تظهر كلمات المرور أو أي بيانات سرية</span>
+              </div>
+              <div className="admin-supervisor-list">
+                {adminSupervisors.filter((supervisor) => supervisor.degree !== '1').map((supervisor) => (
+                  <div className="admin-supervisor-item" key={`${supervisor.username}-${supervisor.degree}`}>
+                    <strong>{supervisor.username || 'مشرف'}</strong>
+                    <span>الدرجة {supervisor.degree}</span>
+                    <button type="button" onClick={() => void handleSupervisorWarning(supervisor.username, supervisor.degree)}>إعطاء إنذار</button>
+                  </div>
+                ))}
+                {adminSupervisors.filter((supervisor) => supervisor.degree !== '1').length === 0 && <span>لا توجد حسابات مشرفين أدنى مسجلة.</span>}
+              </div>
+              {adminSupervisorWarnings.length > 0 && (
+                <div className="admin-record-list">
+                  {adminSupervisorWarnings.slice(0, 20).map((warning, index) => <div className="admin-record-item warning-record" key={`${getAdminRecordId(warning)}-${index}`}><strong>{String(getAdminRecordValue(warning, ['اسم المستخدم', 'username']))}</strong><span>{String(getAdminRecordValue(warning, ['التفاصيل']))}</span><span>أنشأه: {String(getAdminRecordValue(warning, ['أنشأه', 'issuer']))}</span><span>{getAdminRecordDate(warning)} {String(getAdminRecordValue(warning, ['الوقت', 'time']))}</span></div>)}
+                </div>
+              )}
+            </div>
+
             <div className="admin-student-picker">
               <label htmlFor="admin-student-details">عرض سجل طالب كامل</label>
               <select id="admin-student-details" value={selectedAdminStudentId} onChange={(event) => setSelectedAdminStudentId(event.target.value)}>
@@ -1291,7 +1364,7 @@ export default function AttendancePage() {
                       <div className="admin-record-item" key={`${getAdminRecordId(record)}-${index}`}>
                         <strong>{getAdminRecordCourse(record) || 'مادة غير محددة'}</strong>
                         <span>{getAdminRecordDate(record)} - {String(getAdminRecordValue(record, ['الوقت', 'time']) || '')}</span>
-                        <span>{String(getAdminRecordValue(record, ['الحالة', 'status']) || 'غير محدد')}</span>
+                        <span>{String(getAdminRecordValue(record, ['الحالة', 'status']) || 'غير محدد')}</span><span>المشرف: {getAdminRecordSupervisor(record)}</span><span>{String(getAdminRecordValue(record, ['الوقت', 'time']) || '')}</span>
                         {record['الحالة'] !== undefined && <div className="admin-record-actions"><button type="button" onClick={() => void handleAttendanceStatus(record, 'حاضر')}>حاضر</button><button type="button" onClick={() => void handleAttendanceStatus(record, 'غائب')}>غائب</button></div>}
                       </div>
                     ))}
@@ -1302,7 +1375,7 @@ export default function AttendancePage() {
                       <div className="admin-record-item warning-record" key={`${getAdminRecordId(warning)}-${index}`}>
                         <strong>{getAdminRecordCourse(warning) || 'إنذار غياب'}</strong>
                         <span>{String(getAdminRecordValue(warning, ['السبب']) || '')}</span>
-                        <span>{String(getAdminRecordValue(warning, ['التفاصيل']) || '')}</span>
+                        <span>{String(getAdminRecordValue(warning, ['التفاصيل']) || '')}</span><span>المشرف: {getAdminRecordSupervisor(warning)}</span><span>{String(getAdminRecordValue(warning, ['الوقت', 'time']) || '')}</span>
                         <div className="admin-record-actions"><button type="button" onClick={() => void handleWarningDetails(warning, 'غياب مبرر')}>غياب مبرر</button><button type="button" onClick={() => void handleWarningDetails(warning, 'غياب غير مبرر')}>غير مبرر</button><button type="button" onClick={() => void handleWarningToAttendance(warning)}>تحويل لحضور</button><button type="button" className="danger" onClick={() => void handleDeleteWarning(warning)}>حذف</button></div>
                       </div>
                     ))}
@@ -1312,11 +1385,11 @@ export default function AttendancePage() {
             )}
 
             {(adminRecordType === 'all' || adminRecordType === 'attendance') && (
-              <div className="admin-table-section"><h2>آخر سجلات الحضور</h2><div className="admin-record-list">{filteredAdminAttendance.slice(0, 50).map((record, index) => <div className="admin-record-item" key={`${getAdminRecordId(record)}-${index}`}><strong>{getAdminStudentName(record)}</strong><span>{String(getAdminRecordValue(record, ['الرقم الجامعي', 'student_id', 'studentId']))}</span><span>{getAdminRecordCourse(record)} - {getAdminRecordDate(record)}</span><button type="button" onClick={() => setSelectedAdminStudentId(String(getAdminRecordValue(record, ['الرقم الجامعي', 'student_id', 'studentId'])))}>تفاصيل الطالب</button></div>)}</div></div>
+              <div className="admin-table-section"><h2>آخر سجلات الحضور</h2><div className="admin-record-list">{filteredAdminAttendance.slice(0, 50).map((record, index) => <div className="admin-record-item" key={`${getAdminRecordId(record)}-${index}`}><strong>{getAdminStudentName(record)}</strong><span>{String(getAdminRecordValue(record, ['الرقم الجامعي', 'student_id', 'studentId']))}</span><span>{getAdminRecordCourse(record)} - {getAdminRecordDate(record)}</span><span>المشرف: {getAdminRecordSupervisor(record)} - {String(getAdminRecordValue(record, ['الوقت', 'time']) || '')}</span><button type="button" onClick={() => setSelectedAdminStudentId(String(getAdminRecordValue(record, ['الرقم الجامعي', 'student_id', 'studentId'])))}>تفاصيل الطالب</button></div>)}</div></div>
             )}
 
             {(adminRecordType === 'all' || adminRecordType === 'warnings') && (
-              <div className="admin-table-section"><h2>آخر الإنذارات</h2><div className="admin-record-list">{filteredAdminWarnings.slice(0, 50).map((warning, index) => <div className="admin-record-item warning-record" key={`${getAdminRecordId(warning)}-${index}`}><strong>{getAdminStudentName(warning)}</strong><span>{getAdminRecordCourse(warning)} - {getAdminRecordDate(warning)}</span><div className="admin-record-actions"><button type="button" onClick={() => setSelectedAdminStudentId(String(getAdminRecordValue(warning, ['الرقم الجامعي', 'student_id', 'studentId'])))}>تفاصيل</button><button type="button" onClick={() => void handleWarningToAttendance(warning)}>تحويل لحضور</button><button type="button" className="danger" onClick={() => void handleDeleteWarning(warning)}>حذف</button></div></div>)}</div></div>
+              <div className="admin-table-section"><h2>آخر الإنذارات</h2><div className="admin-record-list">{filteredAdminWarnings.slice(0, 50).map((warning, index) => <div className="admin-record-item warning-record" key={`${getAdminRecordId(warning)}-${index}`}><strong>{getAdminStudentName(warning)}</strong><span>{getAdminRecordCourse(warning)} - {getAdminRecordDate(warning)}</span><span>المشرف: {getAdminRecordSupervisor(warning)} - {String(getAdminRecordValue(warning, ['الوقت', 'time']) || '')}</span><div className="admin-record-actions"><button type="button" onClick={() => setSelectedAdminStudentId(String(getAdminRecordValue(warning, ['الرقم الجامعي', 'student_id', 'studentId'])))}>تفاصيل</button><button type="button" onClick={() => void handleWarningToAttendance(warning)}>تحويل لحضور</button><button type="button" className="danger" onClick={() => void handleDeleteWarning(warning)}>حذف</button></div></div>)}</div></div>
             )}
           </section>
         )}

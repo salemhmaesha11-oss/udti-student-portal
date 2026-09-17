@@ -1328,6 +1328,69 @@ tr:nth-child(even) td {
   color: #315d54;
 }
 
+.admin-supervisor-section {
+  margin: 18px 0;
+  padding: 16px;
+  border: 1px solid #dce9e3;
+  border-radius: 16px;
+  background: #fff;
+}
+
+.admin-section-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.admin-section-heading h2 {
+  color: #294e47;
+  font-size: 1.1rem;
+}
+
+.admin-section-heading span {
+  color: #7b8b84;
+  font-size: 0.8rem;
+}
+
+.admin-supervisor-list {
+  display: grid;
+  gap: 8px;
+}
+
+.admin-supervisor-item {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid #e0ebe6;
+  border-radius: 10px;
+  background: #fbfdfc;
+}
+
+.admin-supervisor-item strong {
+  color: #294e47;
+}
+
+.admin-supervisor-item span {
+  color: #667871;
+  margin-inline-end: auto;
+}
+
+.admin-supervisor-item button {
+  min-height: 36px;
+  border: 1px solid #e4cfcf;
+  border-radius: 8px;
+  padding: 7px 10px;
+  background: #fff8f8;
+  color: #a14b4b;
+  font-family: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
 .admin-student-picker {
   display: grid;
   gap: 8px;
