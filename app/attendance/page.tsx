@@ -112,10 +112,21 @@ const normalizeText = (value: unknown) => {
 
 const normalizeSupervisorDegree = (value: unknown) => {
   const text = normalizeText(value).replace(/\s+/g, '').toLowerCase();
-  if (['1', '١', 'one'].includes(text)) return '1';
-  if (['2', '٢', 'two'].includes(text)) return '2';
-  if (['3', '٣', 'three'].includes(text)) return '3';
-  return text;
+  const compact = text.replace(/الدرجة|درجة|درجه/g, '');
+
+  if (['1', '١', 'one', 'first', 'اولى', 'الأولى', '1st'].some((item) => compact.includes(item))) return '1';
+  if (['2', '٢', 'two', 'second', 'ثانية', 'الثانية', '2nd'].some((item) => compact.includes(item))) return '2';
+  if (['3', '٣', 'three', 'third', 'ثالثة', 'الثالثة', '3rd'].some((item) => compact.includes(item))) return '3';
+
+  return compact || text;
+};
+
+const getSupervisorDegreeLabel = (degree: string) => {
+  const normalized = normalizeSupervisorDegree(degree);
+  if (normalized === '1') return 'مودرييتور';
+  if (normalized === '2') return 'سوبر فيزور';
+  if (normalized === '3') return 'فايزور';
+  return 'مشرف';
 };
 
 const normalizeSupervisorValue = (value: unknown) => {
@@ -643,21 +654,18 @@ const findSupervisorLogin = async (username: string, password: string) => {
   }
 
   const rows = Array.isArray(data) ? (data as Record<string, unknown>[]) : [];
+  const normalizedInputUser = normalizeSupervisorValue(username);
+  const normalizedInputPassword = normalizeSupervisorValue(password);
 
   for (const row of rows) {
-    const values = Object.values(row)
-      .filter((item) => item !== null && item !== undefined && String(item).trim() !== '')
-      .map((item) => String(item).trim());
+    const rawUsername = row['اسم المستخدم'] ?? row.username ?? row['username'] ?? row['اسم_المستخدم'] ?? row['user_name'] ?? '';
+    const rawPassword = row['كلمة المرور'] ?? row.password ?? row['password'] ?? row['كلمة_المرور'] ?? row['pass'] ?? '';
+    const rawDegree = row['الدرجة'] ?? row.degree ?? row['degree'] ?? row['درجه'] ?? row['rank'] ?? '';
 
-    if (values.length < 3) continue;
-
-    const [rawUsername, rawPassword, rawDegree] = values;
     const userValue = normalizeSupervisorValue(rawUsername);
     const passwordValue = normalizeSupervisorValue(rawPassword);
     const degreeValue = normalizeSupervisorDegree(rawDegree);
-    const normalizedInputUser = normalizeSupervisorValue(username);
-    const normalizedInputPassword = normalizeSupervisorValue(password);
-    const isAllowedDegree = ['1', '2', '3', '١', '٢', '٣'].includes(degreeValue);
+    const isAllowedDegree = ['1', '2', '3'].includes(degreeValue);
 
     if (userValue !== normalizedInputUser) {
       continue;
@@ -1740,6 +1748,30 @@ export default function AttendancePage() {
             ← العودة للوحة التحكم
           </button>
           <Link href="/" className="back-link">العودة للرئيسية</Link>
+          {supervisorLoggedIn && (
+            <div
+              className="supervisor-identity-badge"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 10,
+                background: '#f8fafc',
+                border: '1px solid #cbd5e1',
+                color: '#0f172a',
+                borderRadius: 999,
+                padding: '8px 14px',
+                fontSize: 13,
+                fontWeight: 700,
+                margin: '0 8px',
+              }}
+            >
+              <span>المشرف: {supervisorUsername || 'غير محدد'}</span>
+              <span>•</span>
+              <span>الدرجة: {getSupervisorDegreeLabel(supervisorDegree) || 'مشرف'}</span>
+              <span>•</span>
+              <span>اسم الدرجة: {getSupervisorDegreeLabel(supervisorDegree) || 'مشرف'}</span>
+            </div>
+          )}
           {supervisorLoggedIn && (
             <button
               type="button"
