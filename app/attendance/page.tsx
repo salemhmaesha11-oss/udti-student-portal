@@ -1776,6 +1776,8 @@ export default function AttendancePage() {
       const result = await sendTelegramNotification(message, { chatId, enabled: isNotificationEnabled });
       if (result && result.ok !== false) {
         setNotice(`تم إرسال تنبيه الطالب ${studentName} إلى التليجرام بنجاح.`);
+      } else if (result?.status === 'chat_not_found' || String(result?.description ?? '').toLowerCase().includes('chat not found')) {
+        setNotice('يرجى التأكد من فتح بوت المعهد على التلجرام والضغط على Start أولاً');
       } else {
         setNotice(`فشل إرسال تنبيه الطالب ${studentName} إلى التليجرام.`);
       }

@@ -49,7 +49,16 @@ export async function sendTelegramNotification(
         disable_web_page_preview: true,
       }),
     });
-    return await res.json();
+
+    const payload = await res.json();
+    if (!payload?.ok) {
+      const description = String(payload?.description ?? '').toLowerCase();
+      if (description.includes('chat not found')) {
+        return { ok: false, status: 'chat_not_found', description: 'chat not found' };
+      }
+    }
+
+    return payload;
   } catch (error) {
     console.error('Telegram Send Error:', error);
     return null;

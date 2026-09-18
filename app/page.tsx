@@ -807,16 +807,18 @@ export default function Home() {
             {showTelegramSettingsModal && (
               <div style={{ gridColumn: '1 / -1', background: '#f8fafc', border: '1px solid #dbeafe', borderRadius: 14, padding: 20 }}>
                 <div style={{ fontSize: 20, fontWeight: 800, marginBottom: 8 }}>تفعيل تنبيهات التلجرام 🔔</div>
-                <div style={{ color: '#475569', lineHeight: 1.8, marginBottom: 12 }}>
-                  لتلقي التنبيهات على حسابك الشخصي، يرجى إدخال معرف التلجرام (Chat ID).
-                </div>
+                <ol style={{ color: '#475569', lineHeight: 1.8, marginBottom: 12, paddingRight: 20 }}>
+                  <li>اضغط على زر "فتح بوت المعهد" أدناه.</li>
+                  <li>اضغط على زر (Start / ابدأ) داخل التلجرام.</li>
+                  <li>قم بنسخ رقم الـ Chat ID الذي سيرسله لك البوت وضعه في الخانة المخصصة أدناه.</li>
+                </ol>
                 <a
-                  href="https://t.me/userinfobot"
+                  href="https://t.me/DTI_Portal_Bot"
                   target="_blank"
                   rel="noreferrer"
                   style={{ display: 'inline-block', marginBottom: 12, padding: '10px 14px', background: '#2563eb', color: '#fff', borderRadius: 10, textDecoration: 'none', fontWeight: 700 }}
                 >
-                  احصل على الـ ID الخاص بك من التلجرام
+                  فتح بوت المعهد
                 </a>
                 <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
                   <input
