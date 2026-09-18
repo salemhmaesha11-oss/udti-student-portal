@@ -192,7 +192,7 @@ export default function Home() {
   const [capsLockOn, setCapsLockOn] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
 
-  const getStudentTelegramChatId = (student: StudentRow | null | undefined) => {
+  const getStudentTelegramChatId = (student: any) => {
     const value = student?.telegram_chat_id ?? student?.['telegram_chat_id'];
     if (value === undefined || value === null) return '';
     return String(value).trim();
