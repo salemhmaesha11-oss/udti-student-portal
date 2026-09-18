@@ -1,32 +1,36 @@
 import { NextResponse } from 'next/server';
 
-export async function POST(req: Request) {
+export const dynamic = 'force-dynamic';
+
+export async function POST(request: Request) {
   try {
-    const body = await req.json();
-    const message = body?.message;
+    const body = await request.json();
+    console.log('Telegram update received:', JSON.stringify(body));
 
-    if (message && message.text === '/start') {
-      const chatId = message.chat.id;
-      const botToken = process.env.TELEGRAM_BOT_TOKEN;
+    const chatId = body?.message?.chat?.id;
+    const text = body?.message?.text;
 
-      if (botToken) {
-        const textMessage = `أهلاً بك في بوابة معهد دبي للتدريب! 🎓\n\nرقم المعرف الخاص بك (Chat ID) هو:\n\`${chatId}\`\n\nيرجى نسخ الرقم وضعه في خانة التفعيل بالموقع لتلقي التنبيهات.`;
+    const token = process.env.TELEGRAM_BOT_TOKEN || '8672071352:AAHn63d112hNq29pRd8NTsR8eEs5OA_KPlA';
 
-        await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: chatId,
-            text: textMessage,
-            parse_mode: 'Markdown'
-          })
-        });
-      }
+    if (chatId) {
+      const responseText = text === '/start' 
+        ? `أهلاً بك! الـ Chat ID الخاص بك هو: \`${chatId}\``
+        : `تم استقبال رسالتك. الـ Chat ID الخاص بك: \`${chatId}\``;
+
+      await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text: responseText,
+          parse_mode: 'Markdown',
+        }),
+      });
     }
 
     return NextResponse.json({ ok: true }, { status: 200 });
   } catch (error) {
-    console.error('Telegram Webhook Error:', error);
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+    console.error('Error handling telegram webhook:', error);
+    return NextResponse.json({ ok: true }, { status: 200 });
   }
 }
