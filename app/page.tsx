@@ -51,6 +51,13 @@ const metadataKeys = new Set([
   'updatedAt',
 ]);
 
+const getSupabaseClient = () => {
+  if (!supabase) {
+    throw new Error('Supabase client is not initialized. Please set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.');
+  }
+  return supabase;
+};
+
 const formatStudentValue = (value: string | number | null | undefined) => {
   if (value === null || value === undefined || value === '') return 'غير متوفر';
   return String(value);
@@ -155,7 +162,7 @@ const parseAttendance = (rows: Record<string, unknown>[]) => {
 
 const getTableRows = async (tableNames: string[], select = '*') => {
   for (const tableName of tableNames) {
-    const { data, error } = await supabase.from(tableName).select(select).limit(1);
+    const { data, error } = await getSupabaseClient().from(tableName).select(select).limit(1);
     if (!error) return { data: data ?? [], tableName };
     const message = String(error.message || '');
     if (message.includes('does not exist') || message.includes('not found') || message.includes('relation')) {
@@ -226,7 +233,7 @@ export default function Home() {
         payload.telegram_chat_id = nextChatId.trim() || null;
       }
 
-      const { error } = await supabase.from('students').update(payload).eq('الرقم الجامعي', studentId);
+      const { error } = await getSupabaseClient().from('students').update(payload).eq('الرقم الجامعي', studentId);
       if (!error) {
         const hydratedStudent = {
           ...(loggedStudent ?? {}),
@@ -249,7 +256,7 @@ export default function Home() {
       if (!studentId) return;
 
       try {
-        const { error } = await supabase.from('students').update({ telegram_notifications_enabled: false }).eq('الرقم الجامعي', studentId);
+        const { error } = await getSupabaseClient().from('students').update({ telegram_notifications_enabled: false }).eq('الرقم الجامعي', studentId);
         if (!error) {
           setTelegramNotificationsEnabled(false);
           setLoggedStudent((previous) => (previous ? { ...previous, telegram_notifications_enabled: false } : previous));
@@ -289,7 +296,7 @@ export default function Home() {
     }
 
     try {
-      const { error } = await supabase.from('students').update({ telegram_chat_id: nextChatId, telegram_notifications_enabled: true }).eq('الرقم الجامعي', studentId);
+      const { error } = await getSupabaseClient().from('students').update({ telegram_chat_id: nextChatId, telegram_notifications_enabled: true }).eq('الرقم الجامعي', studentId);
       if (!error) {
         const updatedStudent = {
           ...(loggedStudent ?? {}),
